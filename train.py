@@ -149,9 +149,10 @@ class Train():
 				break
 
 def main():
-	experiment_base_path = "exp_2"
+	experiment_base_path = "exp_1"
 
 	for beta_value in [1,2,5,10,15,20,30,50,75,100]:
+		tf.keras.backend.clear_session()
 		experiment_path = os.path.join(experiment_base_path, "beta_%d"%beta_value)
 		os.makedirs(experiment_path, exist_ok=True)
 
@@ -180,7 +181,7 @@ def main():
 			image_dir=image_dir,
 			model_setup_dir=model_setup_dir,
 			model_save_file=model_save_file,
-			approve_run=True)
+			approve_run=approve_run)
 
 		#run training
 		training_object()
