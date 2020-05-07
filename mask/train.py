@@ -1,44 +1,29 @@
-import tensorflow as tf
-tf.keras.backend.set_floatx('float32')
-
-import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # used to silence mask warning not being trained
 import matplotlib.pyplot as plt
 from utils import general_tools as gt 
 import utils as ut
+import tensorflow as tf
 import numpy as np
 import time
 import cv2
+import os
 import shutil
 import sys
-import commonly_used_objects_hd64 as cuo
 from functools import reduce
 import sys
-from mask.mask import Mask
-
+try:
+	from . import commonly_used_objects as cuo
+except ImportError:
+	import commonly_used_objects as cuo
+	
 # reconstruction loss
 class ImageMSE(tf.keras.losses.Loss):
 	def call(self, actu, pred):
 		reduction_axis = range(1,len(actu.shape))
-
-		# per point
-		loss = tf.math.squared_difference(actu, pred)
-		"""# see the loss on the image
-		plt.imshow(actu[0].numpy())
-		plt.show()
-		plt.imshow(pred[0].numpy())
-		plt.show()
-		plt.imshow(loss[0].numpy())
-		plt.show()
-		exit()
-		"""
-
 		# per sample
-		loss = tf.math.reduce_sum(loss, reduction_axis)
+		loss = tf.math.reduce_sum(tf.math.squared_difference(actu, pred), reduction_axis)
 		# per batch
 		loss = tf.math.reduce_mean(loss)
 		return loss
-
 
 # regularization loss
 def kld_loss_reduction(kld_loss):
@@ -48,7 +33,7 @@ def kld_loss_reduction(kld_loss):
 
 
 class Train():
-	def __init__(self, model, dataset, inputs_test, preprocessing, image_dir, model_setup_dir, model_save_file, approve_run=False, optimizer=None):
+	def __init__(self, model, dataset, inputs_test, preprocessing, image_dir, model_setup_dir, model_save_file, approve_run=False):
 		"""Creates a training object for your model. See code for defaults.
 		
 		Args:
@@ -72,9 +57,7 @@ class Train():
 
 		# create model
 		self.make_new_save_dir(approve_run)
-		if optimizer is None:
-			optimizer = tf.keras.optimizers.Adam(learning_rate=0.0005, beta_1=0.5)
-		self.setup_training_specific_objects(optimizer)
+		self.setup_training_specific_objects() #TBD this has some hard coded training parameters
 
 	def make_new_save_dir(self, approve_run):
 		"""Creates a new save directory
@@ -100,7 +83,7 @@ class Train():
 				shutil.rmtree(i)
 			os.mkdir(i)
 
-	def setup_training_specific_objects(self, optimizer, total_metric=tf.keras.metrics.Mean()):
+	def setup_training_specific_objects(self, learning_rate=0.0005, beta_1=0.5, total_metric=tf.keras.metrics.Mean()):
 		"""Setup the training, this is already called by default, by can be called again if you want to customize it.
 		
 		Args:
@@ -110,61 +93,34 @@ class Train():
 		"""
 		# training setup
 		self.loss_func = ImageMSE()
-		self.optimizer = optimizer
+		self.optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=beta_1)
 		self.total_metric = total_metric
 
 	def preprocessed_data(self, x=None):
 		inputs, _ = self.dataset()
 		return self.preprocessing(inputs)
 
-	def __call__(self, mask_obj, measure_time=False):
+	def __call__(self):
 		"""Trains the model.
 		Steps to save the images across training and model are defined here, along with displaying curret loss and metrics 
 
 		Total training time: 100000 steps, TBD: if want wvalidation switch this. 
 		"""
 		def save_image_step(step):
-			steps = [5000]#[1,2,3,5,7,10,15,20,30,40,75,100,200,300,500,700,1000,1500,2500]
+			steps = [1,2,3,5,7,10,15,20,30,40,75,100,200,300,500,700,1000,1500,2500]
 			return step in steps or step%5000 == 0
 
 		step = -1
-		itest_batch = self.preprocessing(self.inputs_test[:32])
-		mask_obj(itest_batch)
-		inputs_test_mask = mask_obj.mask
-
-		if measure_time: timer_func = ut.general_tools.Timer()
 		while 1: # set this using validation
 			step+=1
 			inputs = self.preprocessed_data(None)
-			if measure_time: timer_func("loaded inputs")
-			# define mask with inputs
-			# masking the inputs
-			mask_obj(inputs, measure_time=measure_time)
-			inputs = np.concatenate((inputs, mask_obj.mask), -1)
-			if measure_time: timer_func("masked inputs and concatenated")
-			# apply gradient tape
 			with tf.GradientTape() as tape:
 				reconstruct = self.model(inputs)
-				# masking the loss
-				inputs[:,:,:,:3] = mask_obj.apply(inputs[:,:,:,:3])
-				reconstruction = mask_obj.apply(reconstruct[:,:,:,:3])
-				if measure_time: timer_func("applied mask to loss")
-				reconstruct_mask = reconstruct[:,:,:,3:]
-				reconstruct = tf.concat((reconstruction, reconstruct_mask), -1)
-				if measure_time: timer_func("conatentated losses")
-
-				# get loss
 				reconstruction_loss = self.loss_func(inputs, reconstruct)
 				regularization_loss = kld_loss_reduction(self.model.losses[0])
-				loss = reconstruction_loss+regularization_loss 
-				if measure_time: timer_func("created loss")
-
-
+				loss = reconstruction_loss+regularization_loss
 			grads = tape.gradient(loss, self.model.trainable_weights)
 			self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
-			print("step %d\r"%step, end="")
-			if measure_time: timer_func("applied gradients")
-
 
 			if save_image_step(step):
 				print('training step %s:\t rec loss = %s\t, reg loss = %s\t' % (
@@ -172,43 +128,39 @@ class Train():
 					reconstruction_loss.numpy(),
 					regularization_loss.numpy(),
 					))
-				true_inputs = np.concatenate((itest_batch, inputs_test_mask), -1)
-				t_im = cuo.image_traversal(
-					self.model,
-					true_inputs[:2],
-					min_value=0, 
-					max_value=3/15*10, 
-					num_steps=10, is_visualizable=True, 
-					return_traversal_object=False)
-				if measure_time: timer_func("Traversed latents")
+				#true_inputs = self.preprocessing(self.inputs_test[:10])
+				#t_im = cuo.image_traversal(self.model, true_inputs)
+				#"""
+				true_inputs = self.preprocessing(self.inputs_test[:2])
+				reconstruct_test = self.model(true_inputs).numpy()
+				# concatenate the two reconstructions.
+				a = np.concatenate((reconstruct_test[0], reconstruct_test[1]), axis=1)
+				
+				#concatenate the two true images
+				b = np.concatenate((true_inputs[0], true_inputs[1]), axis=1)
+
+				t_im = np.concatenate((a,b), axis=0)
+				#"""
 				plt.imshow(t_im)
-				plt.savefig(
-					os.path.join(self.image_dir, "%d.svg"%step),
-					format="svg", dpi=700)
-				if measure_time: timer_func("saved figure")
+				plt.savefig(os.path.join(self.image_dir, "%d.png"%step))
+			
 			if step%10000 == 0:
 				self.model.save_weights(self.model_save_file)
-			if measure_time: timer_func("saved weights")
+
 			#TBD: this should be replaced with validation
 			if step>=100000:
 				break
-			if measure_time: print()
-			if measure_time and step>=5: exit() 
+
 def main():
 	"""To run, must specify beta value as commandline argument. 
 	I have tried a for loop for models but there was something weird with 
 	it, where the first model that was trained must be loaded first.
 	"""
-	# create masking object
-	# TBD: This masking object right now must be defined before model, need to fix this, there seems to be an issue with load weights, when loading from hdf5 file.
+	experiment_base_path = "exp_1"
 
 	beta_value = int(sys.argv[1])
-	mask_latent = 0 if not len(sys.argv) > 2 else int(sys.argv[2])
-	mask_beta_value = 15 if not len(sys.argv) > 3 else int(sys.argv[3])
-
-
-	experiment_base_path = "exp_1" if not len(sys.argv) > 4 else sys.argv[4]
-	experiment_path = os.path.join(experiment_base_path, "beta_%d_mlatent_%d"%(beta_value, mask_latent))
+	tf.keras.backend.clear_session()
+	experiment_path = os.path.join(experiment_base_path, "beta_%d"%beta_value)
 	os.makedirs(experiment_path, exist_ok=True)
 
 	# initialize model and dataset objects
@@ -217,26 +169,16 @@ def main():
 	model_save_file = os.path.join(experiment_path, cuo.model_save_file)
 
 	dataset_manager, dataset = cuo.dataset_manager, cuo.dataset
-	model = cuo.get_model(beta_value, num_channels=6)
+	model = cuo.get_model(beta_value)
 	preprocessing = cuo.preprocessing
 	inputs_test = cuo.inputs_test
 
-	# initialize mask object
-	mask_obj = Mask(mask_latent, beta_value=mask_beta_value)
-	mask_obj(preprocessing(inputs_test[:2]))
-	generated = mask_obj.view_mask_traversals(preprocessing(inputs_test[:2]))
-	plt.imshow(generated)
-	plt.savefig(
-		"%s/mask.svg"%experiment_base_path,
-		format="svg", dpi=1200)
-
 	# set Parameters
-	approve_run = True
+	approve_run = False
 	batch_size = 32
 
 	# run model and dataset objects
 	dataset = ut.dataset.DatasetBatch(dataset, batch_size).get_next
-
 
 	# define parameters
 	training_object = Train(model=model,
@@ -246,15 +188,11 @@ def main():
 		image_dir=image_dir,
 		model_setup_dir=model_setup_dir,
 		model_save_file=model_save_file,
-		approve_run=approve_run,
-		optimizer=None, # use default
-		)
-
+		approve_run=approve_run)
 
 	#run training
-	training_object(mask_obj, measure_time = False)
+	training_object()
 	print("finished beta %d"%beta_value)
-
 
 
 

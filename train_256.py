@@ -11,27 +11,24 @@ import time
 import cv2
 import shutil
 import sys
-import commonly_used_objects_hd64 as cuo
+import commonly_used_objects_hd256 as cuo
 from functools import reduce
 import sys
 from mask.mask import Mask
 
 # reconstruction loss
-class ImageMSE(tf.keras.losses.Loss):
-	def call(self, actu, pred):
+class ImageMSE():
+	def __init__(self, loss_process=lambda x:x):
+		self.loss_process = loss_process
+
+	def __call__(self, actu, pred):
 		reduction_axis = range(1,len(actu.shape))
 
 		# per point
 		loss = tf.math.squared_difference(actu, pred)
-		"""# see the loss on the image
-		plt.imshow(actu[0].numpy())
-		plt.show()
-		plt.imshow(pred[0].numpy())
-		plt.show()
-		plt.imshow(loss[0].numpy())
-		plt.show()
-		exit()
-		"""
+
+		# apply processing to first 3 channels
+		loss = self.loss_process(loss)
 
 		# per sample
 		loss = tf.math.reduce_sum(loss, reduction_axis)
@@ -39,15 +36,13 @@ class ImageMSE(tf.keras.losses.Loss):
 		loss = tf.math.reduce_mean(loss)
 		return loss
 
-
 # regularization loss
 def kld_loss_reduction(kld_loss):
 	# per batch
 	kld_loss = tf.math.reduce_mean(kld_loss)
 	return kld_loss
 
-
-class Train():
+class TrainVAE():
 	def __init__(self, model, dataset, inputs_test, preprocessing, image_dir, model_setup_dir, model_save_file, approve_run=False, optimizer=None):
 		"""Creates a training object for your model. See code for defaults.
 		
@@ -101,7 +96,7 @@ class Train():
 			os.mkdir(i)
 
 	def setup_training_specific_objects(self, optimizer, total_metric=tf.keras.metrics.Mean()):
-		"""Setup the training, this is already called by default, by can be called again if you want to customize it.
+		"""Setup the objects specific to training, this is already called by default, by can be called again if you want to customize it.
 		
 		Args:
 		    learning_rate (float): The learning rate for Adam optimizer.
@@ -113,11 +108,11 @@ class Train():
 		self.optimizer = optimizer
 		self.total_metric = total_metric
 
-	def preprocessed_data(self, x=None):
+	def preprocessed_data(self, x=None, **kwargs):
 		inputs, _ = self.dataset()
 		return self.preprocessing(inputs)
 
-	def __call__(self, mask_obj, measure_time=False):
+	def __call__(self, measure_time=False):
 		"""Trains the model.
 		Steps to save the images across training and model are defined here, along with displaying curret loss and metrics 
 
@@ -128,33 +123,19 @@ class Train():
 			return step in steps or step%5000 == 0
 
 		step = -1
-		itest_batch = self.preprocessing(self.inputs_test[:32])
-		mask_obj(itest_batch)
-		inputs_test_mask = mask_obj.mask
-
 		if measure_time: timer_func = ut.general_tools.Timer()
 		while 1: # set this using validation
 			step+=1
-			inputs = self.preprocessed_data(None)
-			if measure_time: timer_func("loaded inputs")
-			# define mask with inputs
-			# masking the inputs
-			mask_obj(inputs, measure_time=measure_time)
-			inputs = np.concatenate((inputs, mask_obj.mask), -1)
-			if measure_time: timer_func("masked inputs and concatenated")
+			inputs = self.preprocessed_data(None, measure_time=measure_time)
+
 			# apply gradient tape
 			with tf.GradientTape() as tape:
 				reconstruct = self.model(inputs)
-				# masking the loss
-				inputs[:,:,:,:3] = mask_obj.apply(inputs[:,:,:,:3])
-				reconstruction = mask_obj.apply(reconstruct[:,:,:,:3])
-				if measure_time: timer_func("applied mask to loss")
-				reconstruct_mask = reconstruct[:,:,:,3:]
-				reconstruct = tf.concat((reconstruction, reconstruct_mask), -1)
-				if measure_time: timer_func("conatentated losses")
 
 				# get loss
 				reconstruction_loss = self.loss_func(inputs, reconstruct)
+				if measure_time: timer_func("applied mask to loss")
+
 				regularization_loss = kld_loss_reduction(self.model.losses[0])
 				loss = reconstruction_loss+regularization_loss 
 				if measure_time: timer_func("created loss")
@@ -172,10 +153,9 @@ class Train():
 					reconstruction_loss.numpy(),
 					regularization_loss.numpy(),
 					))
-				true_inputs = np.concatenate((itest_batch, inputs_test_mask), -1)
 				t_im = cuo.image_traversal(
 					self.model,
-					true_inputs[:2],
+					self.inputs_test[:2],
 					min_value=0, 
 					max_value=3/15*10, 
 					num_steps=10, is_visualizable=True, 
@@ -186,14 +166,39 @@ class Train():
 					os.path.join(self.image_dir, "%d.svg"%step),
 					format="svg", dpi=700)
 				if measure_time: timer_func("saved figure")
+
 			if step%10000 == 0:
 				self.model.save_weights(self.model_save_file)
 			if measure_time: timer_func("saved weights")
+
 			#TBD: this should be replaced with validation
 			if step>=100000:
 				break
 			if measure_time: print()
-			if measure_time and step>=5: exit() 
+			if measure_time and step>=5: exit()
+
+class TrainMaskedVAE(TrainVAE):
+	def __init__(self, *args, mask_obj=None, **kwargs):
+		self.mask_obj = mask_obj
+		super().__init__(*args, **kwargs)
+
+	def preprocessed_data(self, x=None, measure_time=False):
+		inputs = super().__init__(x)
+		if measure_time: timer_func("loaded inputs")
+		mask_obj(inputs, measure_time=measure_time)
+		inputs = np.concatenate((inputs, mask_obj.mask), -1)
+		if measure_time: timer_func("masked inputs")
+		return inputs
+
+	def setup_training_specific_objects(self, optimizer, total_metric=tf.keras.metrics.Mean()):
+		super().setup_training_specific_objects(optimizer, total_metric)
+		# overwrite default loss process
+		def loss_process(loss):
+			loss_recon = mask_obj.apply(loss[:,:,:,:3])
+			loss = tf.concat((loss_recon, loss[:,:,:,3:]), -1)
+			return loss
+		self.loss_func = ImageMSE(loss_process=loss_process)
+
 def main():
 	"""To run, must specify beta value as commandline argument. 
 	I have tried a for loop for models but there was something weird with 
@@ -217,19 +222,21 @@ def main():
 	model_save_file = os.path.join(experiment_path, cuo.model_save_file)
 
 	dataset_manager, dataset = cuo.dataset_manager, cuo.dataset
-	model = cuo.get_model(beta_value, num_channels=6)
+	model = cuo.get_model(beta_value, num_latents=10)
+	#model = cuo.get_model(beta_value, num_channels=6)
 	preprocessing = cuo.preprocessing
 	inputs_test = cuo.inputs_test
-
+	inputs_test = preprocessing(inputs_test[:32])
+	"""
 	# initialize mask object
 	mask_obj = Mask(mask_latent, beta_value=mask_beta_value)
-	mask_obj(preprocessing(inputs_test[:2]))
-	generated = mask_obj.view_mask_traversals(preprocessing(inputs_test[:2]))
-	plt.imshow(generated)
+	mask_obj(inputs_test)
+	plt.imshow(mask_obj.view_mask_traversals(inputs_test[:2]))
 	plt.savefig(
 		"%s/mask.svg"%experiment_base_path,
 		format="svg", dpi=1200)
-
+	inputs_test = np.concatenate((inputs_test, mask_obj.mask), -1)
+	#"""
 	# set Parameters
 	approve_run = True
 	batch_size = 32
@@ -239,7 +246,8 @@ def main():
 
 
 	# define parameters
-	training_object = Train(model=model,
+	training_object = TrainVAE(
+		model=model,
 		dataset=dataset,
 		inputs_test=inputs_test,
 		preprocessing=preprocessing,
@@ -247,16 +255,13 @@ def main():
 		model_setup_dir=model_setup_dir,
 		model_save_file=model_save_file,
 		approve_run=approve_run,
-		optimizer=None, # use default
+		optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001), # use default
+		#mask_obj=mask_obj
 		)
 
-
 	#run training
-	training_object(mask_obj, measure_time = False)
+	training_object(measure_time = False)
 	print("finished beta %d"%beta_value)
-
-
-
 
 if __name__ == '__main__':
 	main()

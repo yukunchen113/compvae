@@ -31,7 +31,7 @@ model_save_file = os.path.join(model_setup_dir, "model_weights.h5")
 
 dataset_manager, dataset = ut.dataset.get_celeba_data(
 	ut.general_constants.datapath, 
-	is_HD=False,
+	is_HD=256,
 	group_num=8)
 
 inputs_test, _ = dataset(2, False, True)
@@ -40,11 +40,10 @@ inputs_test, _ = dataset(2, False, True)
 def get_model(*args, **kwargs):
 	model = ut.tf_custom.architectures.variational_autoencoder.BetaTCVAE(
 		*args, **kwargs)
+	model.create_encoder_decoder_256(**kwargs)
 	return model
 
-def preprocessing(inputs):
-	# crop to 128x128 (centered), this number was experimentally found
-	image_crop_size = [128,128]
+def preprocessing(inputs, image_crop_size = [200,200], final_image_size=[256,256]):
 	inputs=tf.image.crop_to_bounding_box(inputs, 
 		(inputs.shape[-3]-image_crop_size[0])//2,
 		(inputs.shape[-2]-image_crop_size[1])//2,
@@ -52,7 +51,7 @@ def preprocessing(inputs):
 		image_crop_size[1],
 		)
 	inputs = tf.image.convert_image_dtype(inputs, tf.float32)
-	inputs = tf.image.resize(inputs, [64,64])
+	inputs = tf.image.resize(inputs, final_image_size)
 	return inputs
 
 def image_traversal(model, inputs, min_value=0, max_value=3, num_steps=15, is_visualizable=True, Traversal=ut.visualize.Traversal, return_traversal_object=False):
@@ -71,12 +70,12 @@ def image_traversal(model, inputs, min_value=0, max_value=3, num_steps=15, is_vi
 	Returns:
 	    Numpy arr: image
 	"""
-	t = ut.general_tools.Timer()
+	#t = ut.general_tools.Timer()
 	traverse = Traversal(model, inputs)
 	#t("Timer Creation")
 	traverse.traverse_complete_latent_space(min_value=min_value, max_value=max_value, num_steps=num_steps)
 	#t("Timer Traversed")
-	traverse.create_samples()
+	traverse.create_samples(batch_size=32)
 	#t("Timer Create Samples")
 	if return_traversal_object:
 		return traverse
@@ -84,3 +83,17 @@ def image_traversal(model, inputs, min_value=0, max_value=3, num_steps=15, is_vi
 		return traverse.samples
 	image = traverse.construct_single_image()
 	return image 
+
+def main():
+	import matplotlib.pyplot as plt
+	batch_size = 32
+	dset = ut.dataset.DatasetBatch(dataset, batch_size).get_next
+	t = ut.general_tools.Timer()
+	data, _ = dset()
+	data = preprocessing(data)
+
+	a = get_model(15)
+	a(data)
+
+if __name__ == '__main__':
+	main()

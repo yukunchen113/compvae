@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import os
 
 class MaskedTraversal(ut.visualize.Traversal):
-	def create_samples(self, is_interweave=False):
+	def create_samples(self, is_interweave=True):
 		"""Will keep last the same
 		"""
 		super().create_samples()
@@ -17,7 +17,7 @@ class MaskedTraversal(ut.visualize.Traversal):
 		generated =self.samples
 		im_n = 0
 		batch_num = 0
-		g0 = generated[:-1]
+		g0 = generated[:-1] # for 1.1.1
 		g1 = generated[1:]
 		g = np.abs(g0 - g1)
 		g = g>0.005
@@ -68,10 +68,10 @@ def main():
 		inputs_test = preprocessing(inputs_test)
 		model(inputs_test[:3]) # arbitrary 4D call for building model to load weights
 		model.load_weights(model_save_file)
-		
+	
 	generated = cuo.image_traversal(model,
-		inputs_test[19:20], latent_of_focus=2, 
-		min_value=-1/beta_value, max_value=1/beta_value, 
+		inputs_test[19:20], 
+		min_value=0, max_value=0, 
 		num_steps=15, is_visualizable=True, Traversal=MaskedTraversal)
 	plt.imshow(generated)
 	plt.show()

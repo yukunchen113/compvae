@@ -55,7 +55,7 @@ def preprocessing(inputs):
 	inputs = tf.image.resize(inputs, [64,64])
 	return inputs
 
-def image_traversal(model, inputs, min_value=0, max_value=3, num_steps=15, is_visualizable=True, Traversal=ut.visualize.Traversal, return_traversal_object=False):
+def image_traversal(model, inputs, min_value=0, max_value=3, num_steps=15, is_visualizable=True, Traversal=ut.visualize.Traversal):
 	"""Standard raversal of the latent space
 	
 	Args:
@@ -65,21 +65,14 @@ def image_traversal(model, inputs, min_value=0, max_value=3, num_steps=15, is_vi
 	    max_value (int): max value for traversal
 	    num_steps (int): The number of steps between min and max value
 	    is_visualizable (bool, optional): If false, will return a traversal tensor of shape [traversal_steps, num_images, W, H, C]
-	    Traversal (Traversal object, optional): This is the traversal object to use
-	    return_traversal_object (bool, optional): Whether to return the traversal or not
 	
 	Returns:
 	    Numpy arr: image
 	"""
 	t = ut.general_tools.Timer()
 	traverse = Traversal(model, inputs)
-	#t("Timer Creation")
 	traverse.traverse_complete_latent_space(min_value=min_value, max_value=max_value, num_steps=num_steps)
-	#t("Timer Traversed")
 	traverse.create_samples()
-	#t("Timer Create Samples")
-	if return_traversal_object:
-		return traverse
 	if not is_visualizable:
 		return traverse.samples
 	image = traverse.construct_single_image()
