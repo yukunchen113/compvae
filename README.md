@@ -1,6 +1,39 @@
 ## Setup:
 Requires my libraty repo, please add that to your PYTHONPATH, such that the utils file can be used.
 
+## Folders and Files:
+figure:
+- this file holds the images used for this readme
+
+queues:
+- this is a folder used in the backend. This holds a queueing file that specifies models to be run
+
+config.py:
+- this is one of the _main_ files. 
+- contains configurations for models to use
+
+exec.py:
+- this is one of the _main_ files. 
+- this is the file that runs automated training by submitting jobs to the queues folder and uses another process to dequeue and train the jobs
+
+model.py:
+- this is one of the _main_ files. 
+- contains object that loads configs into keras models
+- can save parameters and train
+
+template_train.py:
+- execution script that is used by dequeue to run multiple processes in parallel.
+
+train.py:
+- objects for training a keras model
+
+utilities.py:
+- commonly used functions and objects for this project.
+
+view.py:
+- used to visualize models
+
+
 ## Research Journal
 Here are some research notes.
 

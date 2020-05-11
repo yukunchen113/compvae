@@ -1,6 +1,4 @@
+- use higher beta constraint for 256 to disentangle azimuth (beta = 400) for comparitive evaluation
 - train 256 10 latent comp on mask vae
-- use higher beta constraint for 256 to disentangle azimuth (beta = 100) for most strict disentangled rep without posterior collapse
-- use higher beta constraint for 256 to disentangle azimuth (beta = 50) for most strict disentangled rep without posterior collapse
-- use higher beta constraint for 256 to disentangle azimuth (beta = 40) for most strict disentangled rep without posterior collapse
-- train 256 with most strict disentangled rep on 64 mask to see results.
+- add noise to mask step size 
 - condition mask latents on comp
