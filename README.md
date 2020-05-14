@@ -5,7 +5,7 @@ Requires my library repo, please add that to your PYTHONPATH, such that the util
 
 Here is the model Pipeline. DualModelHandler() in model.py creates this pipeline.
 - the blue parts representing usage of the mask in the loss and the preprocessing is done in config.py.  
-[Dual Model Pipeline](figures/compvae_pipeline.jpg)
+![Dual Model Pipeline](figures/compvae_pipeline.jpg)
 
 ## Folders and Files:
 figure:
