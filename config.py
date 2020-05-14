@@ -7,6 +7,8 @@ import numpy as np
 from utilities import ConfigMetaClass
 from utilities import ImageMSE
 import train
+import architectures
+
 #limit GPU usage (from tensiorflow code)
 gpus = tf.config.experimental.list_physical_devices('GPU')
 for i in gpus:
@@ -64,9 +66,13 @@ class Config(metaclass=ConfigMetaClass):
 		self.model_save_steps = 1000
 		self.TrainVAE = train.TrainVAE
 
-	def get_model(self, *args, **kwargs):
+	def _get_model(self, *args, **kwargs):
 		model = ut.tf_custom.architectures.variational_autoencoder.BetaTCVAE(
 			*args, **kwargs)
+		return model
+
+	def get_model(self, *args, **kwargs):
+		model = self._get_model(*args, **kwargs)
 		return model
 
 	def preprocessing(self, inputs, image_crop_size = [128,128], final_image_size=[64,64]):
@@ -89,7 +95,12 @@ class Config64(Config):
 		self.inputs_test_handle = get_inputs_test_handles(2, self.dataset_manager, self.dataset)
 	
 	def preprocessing(self, inputs, image_crop_size=[50,50], final_image_size=[64,64]):
-		return super().preprocessing(inputs, image_crop_size, final_image_size)
+		input_shape = inputs.shape[1:-1]
+		if not (input_shape == np.asarray(final_image_size)).all():
+			inputs = tf.image.convert_image_dtype(inputs, tf.float32)
+			inputs = tf.image.resize(inputs, final_image_size)
+		inputs = super().preprocessing(inputs, image_crop_size, final_image_size)
+		return inputs
 
 class Config256(Config):
 	def _set_dataset(self):
@@ -110,9 +121,36 @@ class Config256(Config):
 		return model
 
 	def preprocessing(self, inputs, image_crop_size=[200,200], final_image_size=[256,256]):
+		input_shape = inputs.shape[1:-1]
+		if not (input_shape == np.asarray(final_image_size)).all():
+			inputs = tf.image.resize(inputs, final_image_size)
 		return super().preprocessing(inputs, image_crop_size, final_image_size)
 
-def make_comp_config(config_obj, mask_obj):
+
+
+def make_mask_config(config_obj):
+	"""Converts a regular config to a mask config by adding functionality
+
+	WARNING: this may alter the config_obj in place
+	
+	Args:
+		config_obj (class): config object
+	"""
+	def _get_model(*args, **kwargs):
+		model = architectures.CondVAE(*args, **kwargs)
+		return model
+
+	config_obj._get_model = _get_model
+
+	def hparam_schedule(steps):
+		# use increasing weight hyper parameter
+		gamma = (steps-3000)/10000
+		return gamma
+
+	config_obj.hparam_schedule = hparam_schedule
+	return config_obj
+
+def make_comp_config(config_obj, mask_obj, randomize_mask_step=True):
 	"""Converts a given config to be compatible with CompVAE networks
 
 	This alters the number of channels to the relevant amount
@@ -143,8 +181,14 @@ def make_comp_config(config_obj, mask_obj):
 		return inputs
 
 	config_obj.preprocessing = preprocessing
-	
 
+	if randomize_mask_step:
+		def latent_space_distance():
+			mean = 0.2
+			std = 0.1
+			return np.abs(np.random.normal(mean,std))
+
+		mask_obj._default_latent_space_distance = latent_space_distance
 
 	"""
 	class CompConfig(Config):

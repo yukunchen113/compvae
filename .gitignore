@@ -1,2 +1,5 @@
 experiments_archive/
 exp/
+__pycache__/
+test*
+todolist.md

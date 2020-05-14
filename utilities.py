@@ -33,15 +33,35 @@ class ConfigMetaClass(type):
 class Mask:
 	"""traversal mask object
 	"""
-	def __init__(self, mask_model, default_latent_of_focus, default_latent_space_distance=1/5):
+	def __init__(self, mask_model, default_latent_of_focus, default_latent_space_distance=1/5, step_start=-0.5):
 		"""Initializes mask
+		
+		Args:
+		    mask_model (nparray): The model to make the mask out of
+		    default_latent_of_focus (int): The mask latent to create masks out of
+		    default_latent_space_distance (float, optional): The distance for a step when subtraction masking
+		    step_start (float, optional): fraction od latent_space_distance. Mask will be created based on: decoder(latent + (step_start+1)*default_latent_space_distance) - decoder(latent + step_start*default_latent_space_distance)
 		"""
 		self.model = mask_model
 		self.default_latent_of_focus = default_latent_of_focus
-		self.default_latent_space_distance = default_latent_space_distance
+		self._default_latent_space_distance = default_latent_space_distance
+		self.step_start = step_start
+
 
 		self.mask = None
-		self.model.trainable=False
+		self.model.trainable=True
+
+
+	def get_mask_latent_step(self, latent_space_distance):
+		return self.start_step*latent_space_distance, (self.start_step+1)*latent_space_distance
+	
+	@property
+	def default_latent_space_distance(self):
+		if callable(self._default_latent_space_distance):
+			dist = self._default_latent_space_distance()
+		else:
+			dist= self._default_latent_space_distance
+		return dist
 
 	def __call__(self, inputs, latent_space_distance=None, override_latent_of_focus=None, measure_time=False):
 		"""Creates the mask
@@ -69,8 +89,10 @@ class Mask:
 		inputs = tf.image.resize(inputs, self.model.shape_input[:-1])
 		if measure_time: timer_func("MASK: resized image")
 
+		min_value, max_value = self.get_mask_latent_step(latent_space_distance)
+
 		traverse = mask_traversal(self.model, inputs,
-			min_value=0, max_value=latent_space_distance, 
+			min_value=min_value, max_value=max_value, 
 			num_steps=2, is_visualizable=False, latent_of_focus=lof, return_traversal_object=True)
 		self.mask = traverse.get_mask(0)
 		if measure_time: timer_func("MASK: got mask/done traversal")
@@ -94,13 +116,13 @@ class Mask:
 		outputs = tf.where(self.mask, inputs, null_mask)
 		return outputs
 
-	def view_mask_traversals(self, inputs, latent_space_distance=None, num_steps=15):
+	def view_mask_traversals(self, inputs, latent_space_distance=1/5, num_steps=30):
 		if latent_space_distance is None:
 			latent_space_distance = self.default_latent_space_distance
 		inputs = tf.image.resize(inputs, self.model.shape_input[:-1])
 		image_of_traversals = mask_traversal(self.model,
 			inputs,
-			min_value=0, max_value=latent_space_distance*num_steps, 
+			min_value=-3, max_value=latent_space_distance*num_steps, 
 			num_steps=num_steps, is_visualizable=True, return_traversal_object=False, is_interweave=True)
 		return image_of_traversals
 
@@ -182,7 +204,7 @@ class MaskedTraversal(ut.visualize.Traversal):
 			
 		return mask
 
-def mask_traversal(model, inputs, min_value=0, max_value=3, num_steps=15, is_visualizable=True, latent_of_focus=None, Traversal=MaskedTraversal, return_traversal_object=False, is_interweave=False):
+def mask_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_visualizable=True, latent_of_focus=None, Traversal=MaskedTraversal, return_traversal_object=False, is_interweave=False):
 	"""Standard raversal of the latent space
 	
 	Args:
@@ -255,7 +277,7 @@ def kld_loss_reduction(kld_loss):
 	kld_loss = tf.math.reduce_mean(kld_loss)
 	return kld_loss
 
-def image_traversal(model, inputs, min_value=0, max_value=3, num_steps=15, is_visualizable=True, Traversal=ut.visualize.Traversal, 
+def image_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_visualizable=True, latent_of_focus=None, Traversal=ut.visualize.Traversal, 
 			return_traversal_object=False):
 	"""Standard raversal of the latent space
 	
@@ -275,7 +297,11 @@ def image_traversal(model, inputs, min_value=0, max_value=3, num_steps=15, is_vi
 	#t = ut.general_tools.Timer()
 	traverse = Traversal(model, inputs)
 	#t("Timer Creation")
-	traverse.traverse_complete_latent_space(min_value=min_value, max_value=max_value, num_steps=num_steps)
+	if latent_of_focus is None:
+		traverse.traverse_complete_latent_space(min_value=min_value, max_value=max_value, num_steps=num_steps)
+	else:
+		traverse.traverse_latent_space(latent_of_focus=latent_of_focus, min_value=min_value, max_value=max_value, num_steps=num_steps)
+
 	#t("Timer Traversed")
 	traverse.create_samples()
 	#t("Timer Create Samples")

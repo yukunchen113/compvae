@@ -1,6 +1,6 @@
-from utils.tf_custom.architectures.variational_autoencoder import VariationalAutoencoder
+from utils.tf_custom.architectures.variational_autoencoder import BetaTCVAE
 from utils.other_library_tools.disentanglementlib_tools import gaussian_log_density, total_correlation 
-from utils.tf_custom.loss import kl_divergence_with_normal
+from utils.tf_custom.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # used to silence mask warning not being trained
 import utils as ut
@@ -8,27 +8,36 @@ import numpy as np
 import pprint
 import dill as pickle
 import copy
+from utilities import Mask
+from train import DualTrainer
+import config as cfg
 #import pickle
 
 class ModelHandler:
-	def __init__(self, base_path, config=None, train_new=False, load_model=True):
+	def __init__(self, base_path, config=None, train_new=False, load_model=True, config_processing=None, initialize_only=False):
 		self.base_path = base_path
 		self.config_path = os.path.join(self.base_path, "config")
-		self._config_processing = None
+		self._config_processing = config_processing
 		self.model = None
+		self.is_load_model = load_model
+		self.is_train_new = train_new
 		# load past config
 		if config is None:
 			self.load()
 		else:
 			self._config = config
 
-		self.get_paths(base_path=base_path)
-		if load_model:
-			self.create_model(load_prev= not train_new)
+		if not initialize_only:
+			self.activate_paths_and_model()
+
+	def activate_paths_and_model(self):
+			# start modifying files
+			self.get_paths(base_path=self.base_path)
+			if self.is_load_model:
+				self.create_model(load_prev= not self.is_train_new)
 
 	def get_paths(self, base_path):
 		config = self.config
-
 
 		# define paths and create main directory
 		paths_obj = ut.general_tools.StandardizedPaths(self.base_path)
@@ -57,9 +66,11 @@ class ModelHandler:
 			num_latents=config.num_latents, 
 			num_channels=config.num_channels)
 		if load_prev and os.path.exists(self.model_save_file):
+			print("found existing model weights. Loading...")
 			self.model.load_weights(self.model_save_file)
+			print("Done")
 
-	def train(self, measure_time=False):
+	def _configure_train(self, **kwargs):
 		config = self.config
 
 		# training
@@ -77,7 +88,15 @@ class ModelHandler:
 			loss_func = config.loss_func,
 			optimizer = config.optimizer,
 			approve_run = config.approve_run,
+			**kwargs
 			)
+		return training_object
+
+	def train(self, measure_time=False):
+		config = self.config
+
+		# define training configureation
+		training_object = self._configure_train()
 
 		#run training
 		training_object(model_save_steps=config.model_save_steps, 
@@ -102,12 +121,15 @@ class ModelHandler:
 			self._config, self._config_processing = pickle.load(f)
 	@property
 	def config(self):
+		return self.get_config()
+
+	def get_config(self):
 		if not self._config_processing is None:
 			return self._config_processing(copy.deepcopy(self._config), self.base_path)
 		else:
 			return self._config	
 
-	def save(self, config_processing=None):
+	def save(self, config_processing=None, save_config_processing=True):
 		"""
 		Saves the imported config file and model summary
 		"""
@@ -118,26 +140,99 @@ class ModelHandler:
 
 		# save configs
 		if self._config_processing is None:
-			self._config_processing = config_processing
+			process_save = config_processing
+		else:
+			process_save = self._config_processing 
+		if not save_config_processing:
+			process_save = None
 		with open(self.config_path, "wb") as f:
-			pickle.dump([self._config, self._config_processing], f)
+			pickle.dump([self._config, process_save], f)
+
+class DualModelHandler():
+
+	"""Will handle training. For other ModelHandler options, individually call comp_mh, or mask_mh 
+	
+	Attributes:
+	    comp_mh (ModelHandler class): MaskVAE ModelHandler object
+	    mask_mh (ModelHandler class): ComponentVAE ModelHandler object
+	"""
+	
+	def __init__(self, base_path, mask_config=None, comp_config=None, train_new=True, load_model=True, randomize_mask_step=True):
+		# get the paths for the models
+		paths_obj = ut.general_tools.StandardizedPaths(base_path)
+		mask_base_path = paths_obj("mask_model", description="MaskVAE model base path")
+		comp_base_path = paths_obj("comp_model", description="ComponentVAE model path")
+
+		# setup mask ModelHandler and config processing
+		def mask_config_processing(config_obj, base_path):
+			return cfg.make_mask_config(config_obj)
+		self.mask_mh = ModelHandler(base_path=mask_base_path, 
+				config=mask_config, train_new=train_new, load_model=load_model, 
+				config_processing=mask_config_processing)
+
+		# setup comp ModelHandler and config processing
+		self.comp_mh = ModelHandler(base_path=comp_base_path, 
+				config=comp_config, train_new=train_new, load_model=load_model, initialize_only=True)
+		mask_obj = Mask(self.mask_mh.model, self.comp_mh.config.mask_latent_of_focus)
+		def comp_config_processing(config_obj, base_path):
+			#base path is the base path for compvae, will be processed to be relative to mask
+			return cfg.make_comp_config(config_obj, mask_obj, randomize_mask_step=randomize_mask_step)
+		self.comp_mh._config_processing = comp_config_processing
+		self.comp_mh.activate_paths_and_model()
+
+	def _configure_train(self):
+		mask_train_obj = self.mask_mh._configure_train(hparam_schedule=self.mask_mh.config.hparam_schedule)
+		comp_train_obj = self.comp_mh._configure_train()
+
+		comp_train_obj.mask_latent_of_focus = self.comp_mh.config.mask_latent_of_focus
+
+		# select the larger dataset
+		if self.mask_mh.model.shape_input[1] < self.comp_mh.model.shape_input[1]:
+			dataset = comp_train_obj.dataset
+			inputs_test = comp_train_obj.inputs_test
+		else:
+			dataset = mask_train_obj.dataset
+			inputs_test = mask_train_obj.inputs_test
+
+		# use dual training, where some parameters are shared
+		training_object = DualTrainer(mask_train_obj, comp_train_obj, dataset, inputs_test)
+		return training_object
+	
+	def train(self, measure_time=False):
+		# define training configureation
+		training_object = self._configure_train()
+
+		#run training
+		training_object(model_save_steps=self.mask_mh.config.model_save_steps, 
+				total_steps=self.mask_mh.config.total_steps, measure_time=measure_time)
+		print("finished")
+
+	def save(self):
+		self.mask_mh.save(save_config_processing=False)
+		self.comp_mh.save(save_config_processing=False)
 
 
-class CompVAE(VariationalAutoencoder):
-	def __init__(self, beta, name="BetaTCVAE", **kwargs):
-		super().__init__(name=name, **kwargs)
-		self.create_encoder_decoder_512() # use the larger model
-		self.beta = beta
+def main():
+	base_path = "exp/train_both/randomized_mask_step"
+	mask_config = cfg.Config64()
+	mask_config.beta_value = 30
+	comp_config = cfg.Config256()
+	comp_config.beta_value = 500
+	comp_config.mask_latent_of_focus = 2
+	model_handler = DualModelHandler(base_path, mask_config, comp_config, randomize_mask_step=False)
+	model_handler.save()
+	model_handler.train()
 
-	def call(self, inputs, m_sampled, m_logvar, m_mean):
-		sample, mean, logvar = self.encoder(inputs)
-		reconstruction = self.decoder(sample)
-		self.add_loss(self.regularizer(sample, mean, logvar, 
-				m_sampled, m_logvar, m_mean))
-		return reconstruction
+def main():
+	base_path = "exp/train_both/pretrained_mask"
+	mask_config = cfg.Config64()
+	mask_config.beta_value = 30
+	comp_config = cfg.Config256()
+	comp_config.beta_value = 500
+	comp_config.mask_latent_of_focus = 3
+	model_handler = DualModelHandler(base_path, mask_config, comp_config, train_new=False)
+	model_handler.save()
+	model_handler.train()
 
-	def regularizer(self, sample, mean, logvar, m_sampled, m_logvar, m_mean):
-		# regularization uses disentanglementlib method
-		kl_loss = kl_divergence_with_normal(mean, logvar)
-		tc = (self.beta - 1) * total_correlation(sample, mean, logvar)
-		return tc + kl_loss
+if __name__ == '__main__':
+	main()

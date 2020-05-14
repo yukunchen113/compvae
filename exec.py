@@ -93,7 +93,7 @@ def dequeue_train(queue_file):
 	return 1
 
 
-def make_mask(base_path, overwrite=False, is_overwrite_train=False, mask_config=cfg.Config256()):
+def make_mask_only(base_path, overwrite=False, is_overwrite_train=False, mask_config=cfg.Config64()):
 	"""This is the function to control execution
 	
 	Args:
@@ -112,12 +112,13 @@ def make_mask(base_path, overwrite=False, is_overwrite_train=False, mask_config=
 	if (not os.path.exists(maskhandler.model_save_file)) or is_overwrite_train:
 		print("model already has saved weights, overwriting.")
 		enqueue_train(mask_model_path, queue_file=mqfile)
+	else:
+		open(mqfile, 'a').close() # must be created at least
 	return mask_model_path
 
-def make_comp(base_path, mask_model_path, mlof, comp_beta, comp_config=cfg.Config256(), comp_model_path=None):
+def make_comp_only(base_path, mask_model_path, comp_config=cfg.Config256(), comp_model_path=None):
 	# create compvae config
-	comp_config.beta_value = comp_beta
-	comp_config.mask_latent_of_focus = mlof
+
 	if comp_model_path is None:
 		comp_model_path = os.path.join(base_path, 
 				"beta_%d_mlof_%d"%(comp_config.beta_value, comp_config.mask_latent_of_focus))
@@ -138,10 +139,11 @@ def make_comp(base_path, mask_model_path, mlof, comp_beta, comp_config=cfg.Confi
 	enqueue_train(comp_model_path, queue_file=cqfile)
 	return comp_model_path
 
+
+
 mqfile = "queues/mask_queue"
 cqfile = "queues/comp_queue"
-
-if __name__ == '__main__':
+def main():
 	if len(sys.argv)>1 and sys.argv[1] == "dequeue":
 		while True:
 			is_mask_available = 1
@@ -159,7 +161,7 @@ if __name__ == '__main__':
 
 		mask_config=cfg.Config64()
 		mask_config.beta_value = mask_beta
-		mask_model_path = make_mask(base_path=p, overwrite=False, 
+		mask_model_path = make_mask_only(base_path=p, overwrite=False, 
 				is_overwrite_train=False, mask_config=mask_config)
 
 		# comp
@@ -168,6 +170,21 @@ if __name__ == '__main__':
 		for j in [3,4]:
 			comp_model_path = comp_path_obj("beta_%d_mlof_%d"%(comp_beta, j), 
 					description="CompVAE model with beta=%d, conditioned on mask latent %d"%(comp_beta, j))
-			make_comp(base_path=p, mask_model_path=mask_model_path, 
-					mlof=j, comp_beta=comp_beta, comp_model_path=comp_model_path)
+
+			comp_config = cfg.Config256()
+			comp_config.beta_value = comp_beta
+			comp_config.mask_latent_of_focus = j
+			make_comp_only(base_path=p, mask_model_path=mask_model_path, 
+					comp_config=comp_config, comp_model_path=comp_model_path)
 	lock.unlock()
+
+def quick_run():
+	model_path = "exp/beta_500_256"
+	config=cfg.Config256()
+	config.beta_value = 500
+	handler = ModelHandler(model_path, config)
+	handler.save()
+	handler.train()
+
+if __name__ == '__main__':
+	quick_run()

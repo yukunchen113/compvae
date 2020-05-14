@@ -1,4 +1,11 @@
-- use higher beta constraint for 256 to disentangle azimuth (beta = 400) for comparitive evaluation
-- train 256 10 latent comp on mask vae
-- add noise to mask step size 
+- use higher beta constraint for 256 to disentangle azimuth (beta = 500) for comparitive evaluation - done
+- train 256 10 latent comp on mask vae ... done
+- add noise to mask step size ... done
 - condition mask latents on comp
+	- together training scheme ... done
+	- prevent conditioning on posterior collapse latents ... not started
+	- train together on pretrained mask ... done
+
+
+
+
