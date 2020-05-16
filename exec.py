@@ -140,7 +140,6 @@ def make_comp_only(base_path, mask_model_path, comp_config=cfg.Config256(), comp
 	return comp_model_path
 
 
-
 mqfile = "queues/mask_queue"
 cqfile = "queues/comp_queue"
 def main():
@@ -179,9 +178,9 @@ def main():
 	lock.unlock()
 
 def quick_run():
-	model_path = "exp/beta_500_256"
-	config=cfg.Config256()
-	config.beta_value = 500
+	model_path = "exp/beta_30"
+	config=cfg.Config64()
+	config.beta_value = 30
 	handler = ModelHandler(model_path, config)
 	handler.save()
 	handler.train()

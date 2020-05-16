@@ -9,7 +9,7 @@ class CondVAE(BetaTCVAE):
 		super().__init__(name=name, beta=beta, **kwargs)
 
 	def call(self, inputs, cond_logvar, cond_mean, gamma, latent_to_condition):
-		self.gamma = np.clip(gamma, 0, 1).astype(np.float32)
+		self.gamma = np.clip(gamma, 0, 0.75).astype(np.float32)
 		self.latent_to_condition = latent_to_condition
 
 		self.latest_sample, self.latest_mean, self.latest_logvar = self.encoder(inputs)

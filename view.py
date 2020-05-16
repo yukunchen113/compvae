@@ -9,12 +9,14 @@ import matplotlib.pyplot as plt
 import utilities
 import numpy as np
 import utils as ut
-
+import imageio
+import shutil
 def show_model(path):
 	modelhandler = DualModelHandler(base_path=path, train_new=False, load_model=True)
-	inputs_test = modelhandler.comp_mh.config.inputs_test[:32]
+	inputs_test = modelhandler.comp_mh.config.inputs_test[1:3]
 	model = modelhandler.mask_mh
 	inputs_test = model.config.preprocessing(inputs_test)
+	"""
 	model.model(inputs_test)[:,:,:,:3]
 
 	# model kl evaluation
@@ -24,26 +26,30 @@ def show_model(path):
 	kldiv = ut.tf_custom.loss.kl_divergence_with_normal(mu, sig)
 	avg_kl = np.average(kldiv, 0)
 	print(avg_kl>1/3*np.amax(avg_kl))
-
-	generated = utilities.mask_traversal(
+	"""
+	traversal = utilities.mask_traversal(
 		model.model,
-		inputs_test[:1],
-		is_visualizable=True,
-		is_interweave=True,
+		inputs_test,
+		return_traversal_object=True, 
+		is_visualizable=False,
 		num_steps=30,
 		min_value=-3,
 		max_value=3
 		)
-	plt.imshow(generated)
-	plt.show()
+	gif_path = "test.gif"
+	traversal.save_gif(gif_path, 3)
+
+
+	#plt.imshow(generated)
+	#plt.show()
 	"""
 	import matplotlib.animation as animation
 
 	fig = plt.figure()
 
 	ims = []
-	for i in generated[:-1,2]:
-		im = plt.imshow(i[:,:,:3], animated=True)
+	for i in generated[:-1,3]:
+		im = 
 		ims.append([im])
 	ims=ims+ims[::-1]
 	ani = animation.ArtistAnimation(fig, ims, interval=50, blit=True,
@@ -53,15 +59,6 @@ def show_model(path):
 
 	plt.show()
 	#"""
-
-
-
-
-
-
-
-
-
 
 	"""
 	mask_obj = Mask(model.model, 1)

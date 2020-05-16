@@ -53,7 +53,7 @@ class Mask:
 
 
 	def get_mask_latent_step(self, latent_space_distance):
-		return self.start_step*latent_space_distance, (self.start_step+1)*latent_space_distance
+		return self.step_start*latent_space_distance, (self.step_start+1)*latent_space_distance
 	
 	@property
 	def default_latent_space_distance(self):
@@ -135,6 +135,7 @@ class MaskedTraversal(ut.visualize.Traversal):
 		super().__init__(*args, **kwargs)
 		self.masked_inputs = None
 		self.pixel_diff_threshold =pixel_diff_threshold
+		self.unmasked_samples = None
 	def create_samples(self, is_interweave=False, mask_only=False):
 		"""Will keep last the same
 		
@@ -144,7 +145,9 @@ class MaskedTraversal(ut.visualize.Traversal):
 		super().create_samples()
 
 		# get mask
+		self.unmasked_samples = self.samples.copy()
 		generated =self.samples
+
 		im_n = 0
 		batch_num = 0
 		g0 = generated[:-1] # for 1.1.1
@@ -203,6 +206,9 @@ class MaskedTraversal(ut.visualize.Traversal):
 			raise Exception("only traversed %d dimensions with %d images"%(self.mask.shape[0]//self.orig_inputs.shape[0], self.orig_inputs.shape[0]))
 			
 		return mask
+	@property
+	def samples_list(self):
+		return [self.unmasked_samples[:-1], self.samples[:-1]]
 
 def mask_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_visualizable=True, latent_of_focus=None, Traversal=MaskedTraversal, return_traversal_object=False, is_interweave=False):
 	"""Standard raversal of the latent space
@@ -277,8 +283,7 @@ def kld_loss_reduction(kld_loss):
 	kld_loss = tf.math.reduce_mean(kld_loss)
 	return kld_loss
 
-def image_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_visualizable=True, latent_of_focus=None, Traversal=ut.visualize.Traversal, 
-			return_traversal_object=False):
+def image_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_visualizable=True, latent_of_focus=None, Traversal=ut.visualize.Traversal, return_traversal_object=False):
 	"""Standard raversal of the latent space
 	
 	Args:

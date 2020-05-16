@@ -103,6 +103,9 @@ Expectations:
 
 1. run model
 - try masking the input before prediction
+	- currently preprocessing the inputs by concatenating the mask.
+	- So vae learns the mask as well.
+	- Same style as MONet.
 
 - try masking the loss
 	- though might need to change beta as KLD might have a stronger effect?

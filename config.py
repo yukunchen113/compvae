@@ -53,6 +53,7 @@ class Config(metaclass=ConfigMetaClass):
 		return self.dataset_manager.images
 	
 	def _set_model(self):
+		self.random_seed = None
 		self.num_latents = 10
 		self.num_channels = 3
 		self.beta_value = 30
@@ -64,6 +65,7 @@ class Config(metaclass=ConfigMetaClass):
 		self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.0005, beta_1=0.5)
 		self.total_steps = 100000
 		self.model_save_steps = 1000
+		self.is_train = True
 		self.TrainVAE = train.TrainVAE
 
 	def _get_model(self, *args, **kwargs):
@@ -144,13 +146,13 @@ def make_mask_config(config_obj):
 
 	def hparam_schedule(steps):
 		# use increasing weight hyper parameter
-		gamma = (steps-3000)/10000
+		gamma = (steps-10000)/30000
 		return gamma
 
 	config_obj.hparam_schedule = hparam_schedule
 	return config_obj
 
-def make_comp_config(config_obj, mask_obj, randomize_mask_step=True):
+def make_comp_config(config_obj, mask_obj, randomize_mask_step=False):
 	"""Converts a given config to be compatible with CompVAE networks
 
 	This alters the number of channels to the relevant amount
@@ -185,7 +187,7 @@ def make_comp_config(config_obj, mask_obj, randomize_mask_step=True):
 	if randomize_mask_step:
 		def latent_space_distance():
 			mean = 0.2
-			std = 0.1
+			std = 0.05
 			return np.abs(np.random.normal(mean,std))
 
 		mask_obj._default_latent_space_distance = latent_space_distance

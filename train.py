@@ -8,16 +8,38 @@ import utils as ut
 import numpy as np
 import time
 import shutil
-from utilities import image_traversal, kld_loss_reduction, ImageMSE
+from utilities import mask_traversal, kld_loss_reduction, ImageMSE
 from functools import reduce
 
+class OptimizerManager():
+	def __init__(self, model, loss_func, optimizer, is_train=True):
+		self.model = model
+		self.loss_func = loss_func
+		self.optimizer = optimizer
+		self.is_train = is_train
 
+	def tape_gradients(self, inputs):
+		with tf.GradientTape() as tape:
+			reconstruct = self.model(inputs)
 
+			# get loss
+			reconstruction_loss = self.loss_func(inputs, reconstruct)
 
+			for l in self.model.losses:
+				regularization_loss = kld_loss_reduction(l)
+			loss = reconstruction_loss+regularization_loss 
+		self.reconstruction_loss = reconstruction_loss
+		self.regularization_loss = regularization_loss
+		return tape, loss
+
+	def run_optimizer(self, tape, loss):
+		grads = tape.gradient(loss, self.model.trainable_weights)
+		if self.is_train:
+			self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
 
 
 class TrainVAE():
-	def __init__(self, model, dataset, inputs_test, preprocessing, image_dir, model_setup_dir, optimizer, loss_func, model_save_file, approve_run=False, hparam_schedule=None):
+	def __init__(self, model, dataset, inputs_test, preprocessing, image_dir, model_setup_dir, optimizer, loss_func, model_save_file, approve_run=False, hparam_schedule=None, is_train=True):
 		"""Creates a training object for your model. See code for defaults.
 		
 		Args:
@@ -34,7 +56,6 @@ class TrainVAE():
 		self.image_dir = image_dir
 		self.model_setup_dir = model_setup_dir
 		self.model_save_file = model_save_file
-		
 		# setup datasets
 		self.dataset = dataset
 		self.inputs_test = inputs_test
@@ -47,7 +68,7 @@ class TrainVAE():
 		self.make_new_save_dir(approve_run)
 
 		# training optimizer config
-		self.opt_man = OptimizerManager(model, loss_func, optimizer)
+		self.opt_man = OptimizerManager(model, loss_func, optimizer, is_train=is_train)
 		self.hparam_schedule = hparam_schedule
 
 		# dynamically changing parameters
@@ -86,17 +107,18 @@ class TrainVAE():
 		self.model.save_weights(self.model_save_file)
 
 	def save_image(self, step):
-		t_im = image_traversal(
+		t_im = mask_traversal(
 			self.model,
-			self.preprocess(inputs=self.inputs_test[:2]),
-			min_value=0, 
-			max_value=3/15*10, 
-			num_steps=10, is_visualizable=True, 
-			return_traversal_object=False)
-		plt.imshow(t_im)
-		plt.savefig(
-			os.path.join(self.image_dir, "%d.svg"%step),
-			format="svg", dpi=700)
+			self.preprocess(inputs=self.inputs_test[1:3]),
+			min_value=-3, 
+			max_value=3, 
+			num_steps=30, 
+			return_traversal_object=True)
+		t_im.save_gif(os.path.join(self.image_dir, "%d.gif"%step))
+		#plt.imshow(t_im)
+		#plt.savefig(
+		#	os.path.join(self.image_dir, "%d.svg"%step),
+		#	format="svg", dpi=700)
 
 	@staticmethod
 	def save_image_step(step):
@@ -149,32 +171,10 @@ class TrainVAE():
 			if measure_time: print()
 			if measure_time and step>=5: exit()
 
-class OptimizerManager():
-	def __init__(self, model, loss_func, optimizer):
-		self.model = model
-		self.loss_func = loss_func
-		self.optimizer = optimizer
-
-	def tape_gradients(self, inputs):
-		with tf.GradientTape() as tape:
-			reconstruct = self.model(inputs)
-
-			# get loss
-			reconstruction_loss = self.loss_func(inputs, reconstruct)
-
-			for l in self.model.losses:
-				regularization_loss = kld_loss_reduction(l)
-			loss = reconstruction_loss+regularization_loss 
-		self.reconstruction_loss = reconstruction_loss
-		self.regularization_loss = regularization_loss
-		return tape, loss
-
-	def run_optimizer(self, tape, loss):
-		grads = tape.gradient(loss, self.model.trainable_weights)
-		self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
-
 class CondOptimizerManager(OptimizerManager):
 	def tape_gradients(self, inputs, cond_logvar, cond_mean, gamma, latent_to_condition):
+		"""Cond optimizer for the Cond model.
+		"""
 		with tf.GradientTape() as tape:
 			reconstruct = self.model(
 					inputs = inputs, 
@@ -202,7 +202,7 @@ class DualTrainer():
 
 		self.mtr_obj = mask_train_obj
 		self.mtr_obj.opt_man = CondOptimizerManager(self.mtr_obj.model, 
-				self.mtr_obj.opt_man.loss_func, self.mtr_obj.opt_man.optimizer)
+				self.mtr_obj.opt_man.loss_func, self.mtr_obj.opt_man.optimizer, self.mtr_obj.opt_man.is_train)
 		self.ctr_obj = cond_train_obj
 
 
