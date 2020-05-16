@@ -8,34 +8,10 @@ import utils as ut
 import numpy as np
 import time
 import shutil
-from utilities import mask_traversal, kld_loss_reduction, ImageMSE
+from utilities.standard import image_traversal, kld_loss_reduction, ImageMSE
+from utilities.mask import mask_traversal
 from functools import reduce
-
-class OptimizerManager():
-	def __init__(self, model, loss_func, optimizer, is_train=True):
-		self.model = model
-		self.loss_func = loss_func
-		self.optimizer = optimizer
-		self.is_train = is_train
-
-	def tape_gradients(self, inputs):
-		with tf.GradientTape() as tape:
-			reconstruct = self.model(inputs)
-
-			# get loss
-			reconstruction_loss = self.loss_func(inputs, reconstruct)
-
-			for l in self.model.losses:
-				regularization_loss = kld_loss_reduction(l)
-			loss = reconstruction_loss+regularization_loss 
-		self.reconstruction_loss = reconstruction_loss
-		self.regularization_loss = regularization_loss
-		return tape, loss
-
-	def run_optimizer(self, tape, loss):
-		grads = tape.gradient(loss, self.model.trainable_weights)
-		if self.is_train:
-			self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
+from .optimizer import OptimizerManager, CondOptimizerManager
 
 
 class TrainVAE():
@@ -171,27 +147,6 @@ class TrainVAE():
 			if measure_time: print()
 			if measure_time and step>=5: exit()
 
-class CondOptimizerManager(OptimizerManager):
-	def tape_gradients(self, inputs, cond_logvar, cond_mean, gamma, latent_to_condition):
-		"""Cond optimizer for the Cond model.
-		"""
-		with tf.GradientTape() as tape:
-			reconstruct = self.model(
-					inputs = inputs, 
-					cond_logvar = cond_logvar, 
-					cond_mean = cond_mean, 
-					gamma = gamma, 
-					latent_to_condition = latent_to_condition)
-			# get loss
-			reconstruction_loss = self.loss_func(inputs, reconstruct)
-
-			for l in self.model.losses:
-				regularization_loss = kld_loss_reduction(l)
-			loss = reconstruction_loss+regularization_loss 
-		self.reconstruction_loss = reconstruction_loss
-		self.regularization_loss = regularization_loss
-		return tape, loss
-
 class DualTrainer():
 	def __init__(self, mask_train_obj, cond_train_obj, dataset, inputs_test):
 		"""Creates a training object for your model. See code for defaults.
@@ -267,3 +222,4 @@ class DualTrainer():
 				break
 			if measure_time: print()
 			if measure_time and step>=5: exit()
+

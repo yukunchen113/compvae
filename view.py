@@ -1,7 +1,7 @@
 import tensorflow as tf
 import time
 from model import ModelHandler, DualModelHandler
-from utilities import Mask
+from utilities.mask import Mask
 import config as cfg 
 import sys
 import os
@@ -27,7 +27,7 @@ def show_model(path):
 	avg_kl = np.average(kldiv, 0)
 	print(avg_kl>1/3*np.amax(avg_kl))
 	"""
-	traversal = utilities.mask_traversal(
+	traversal = utilities.mask.mask_traversal(
 		model.model,
 		inputs_test,
 		return_traversal_object=True, 

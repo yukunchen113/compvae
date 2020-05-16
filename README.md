@@ -8,40 +8,55 @@ Here is the model Pipeline. DualModelHandler() in model.py creates this pipeline
 ![Dual Model Pipeline](figures/compvae_pipeline.jpg)
 
 ## Folders and Files:
-figure:
-- this file holds the images used for this readme
 
-config.py:
+### view.py:
+- used to visualize models and run inference
+
+### exec.py:
+- this is the file that runs experiments.
+
+### figures
+- this folder holds the images used for this readme
+
+### core
+This folder holds the tools necessary to run experiments.
+
+#### core/config
+core/config/config.py:
+- this is one of the files. 
+- contains configurations for models to use.
+- these are used as default then overwritten by setting attributes.
+
+core/config/addition.py:
+- additional functions that are applied to config instances for relevant additional options
+- this includes converting a config to be compatible with mask network and a config to be compatible with a comp network 
+
+#### core/model
+core/model/model.py:
 - this is one of the _main_ files. 
-- contains configurations for models to use
+- contains handler objects. These objects load configs into keras models and allow easy training and saving.
 
-model.py:
-- this is one of the _main_ files. 
-- contains object that loads configs into keras models
-- can save parameters and train
-- see main() for how to train a model
+core/model/achitectures.py:
+- this contains relevant ML architectures such as a modified VAE.
 
-achitectures.py:
-- this contains relevant ML architectures 
+#### core/train
+core/train/manager.py:
+- Contains training manager objects. These objects train a keras model. This will run the training loop.
 
-template_train.py:
-- execution script that is used by dequeue to run multiple processes in parallel.
+core/train/optimizer.py:
+- contains the optimzer manager objects, which are used to optimize specific models during training
+- These optimizers create the gradient tape, and optimizes. (gradient tape should be custom if model requires custom arguments during inference)
 
-train.py:
-- objects for training a keras model
+#### utilities
+utilities/standard.py:
+- commonly used functions and objects across this project.
 
-utilities.py:
-- commonly used functions and objects for this project.
+utilities/mask.py
+- commonly used mask functions and objects across this project.
 
-view.py:
-- used to visualize models
-
-queues:
-- this is a folder used in the backend. This holds a queueing file that specifies models to be run
-
-exec.py:
-- this is the file that runs automated training by submitting jobs to the queues folder and uses another process to dequeue and train the jobs
-- this is for more automated training and controls queuing of tasks.
+#### queue:
+- this is a folder used in the backend. This holds a queueing function which can take jobs and run them.
+- currently being worked on. TBD.
 
 ## Research Journal
 Here are some research notes.

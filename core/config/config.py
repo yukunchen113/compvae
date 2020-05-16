@@ -1,20 +1,17 @@
 """This file contains default configuration for training a compvae
 """
 import tensorflow as tf
-import os
 import utils as ut 
 import numpy as np
-from utilities import ConfigMetaClass
-from utilities import ImageMSE
-import train
-import architectures
+from utilities.standard import ConfigMetaClass, ImageMSE
+from core.train.manager import TrainVAE
 
 #limit GPU usage (from tensiorflow code)
 gpus = tf.config.experimental.list_physical_devices('GPU')
 for i in gpus:
 	tf.config.experimental.set_memory_growth(i, True)
 
-def get_inputs_test_handles(group_size, dataset_manager, dataset):
+def _get_inputs_test_handles(group_size, dataset_manager, dataset):
 	dataset(group_size, False, True)
 	return dataset_manager.last_group_list
 
@@ -43,7 +40,7 @@ class Config(metaclass=ConfigMetaClass):
 			ut.general_constants.datapath, 
 			is_HD=False,
 			group_num=8)
-		self.inputs_test_handle = get_inputs_test_handles(2, self.dataset_manager, self.dataset)
+		self.inputs_test_handle = _get_inputs_test_handles(2, self.dataset_manager, self.dataset)
 
 	@property
 	def inputs_test(self):
@@ -66,7 +63,7 @@ class Config(metaclass=ConfigMetaClass):
 		self.total_steps = 100000
 		self.model_save_steps = 1000
 		self.is_train = True
-		self.TrainVAE = train.TrainVAE
+		self.TrainVAE = TrainVAE
 
 	def _get_model(self, *args, **kwargs):
 		model = ut.tf_custom.architectures.variational_autoencoder.BetaTCVAE(
@@ -94,7 +91,7 @@ class Config64(Config):
 			ut.general_constants.datapath, 
 			is_HD=64,
 			group_num=8)
-		self.inputs_test_handle = get_inputs_test_handles(2, self.dataset_manager, self.dataset)
+		self.inputs_test_handle = _get_inputs_test_handles(2, self.dataset_manager, self.dataset)
 	
 	def preprocessing(self, inputs, image_crop_size=[50,50], final_image_size=[64,64]):
 		input_shape = inputs.shape[1:-1]
@@ -110,7 +107,7 @@ class Config256(Config):
 			ut.general_constants.datapath, 
 			is_HD=256,
 			group_num=8)
-		self.inputs_test_handle = get_inputs_test_handles(2, self.dataset_manager, self.dataset)
+		self.inputs_test_handle = _get_inputs_test_handles(2, self.dataset_manager, self.dataset)
 
 	def _set_training(self):
 		super()._set_training()
@@ -130,91 +127,4 @@ class Config256(Config):
 
 
 
-def make_mask_config(config_obj):
-	"""Converts a regular config to a mask config by adding functionality
 
-	WARNING: this may alter the config_obj in place
-	
-	Args:
-		config_obj (class): config object
-	"""
-	def _get_model(*args, **kwargs):
-		model = architectures.CondVAE(*args, **kwargs)
-		return model
-
-	config_obj._get_model = _get_model
-
-	def hparam_schedule(steps):
-		# use increasing weight hyper parameter
-		gamma = (steps-10000)/30000
-		return gamma
-
-	config_obj.hparam_schedule = hparam_schedule
-	return config_obj
-
-def make_comp_config(config_obj, mask_obj, randomize_mask_step=False):
-	"""Converts a given config to be compatible with CompVAE networks
-
-	This alters the number of channels to the relevant amount
-	wraps preprocessing to what a compVAE would take in
-	wraps loss function 
-
-	WARNING: this may alter the config_obj in place
-
-	"""
-	# set config mask
-	
-
-	config_obj.mask_obj = mask_obj
-
-	config_obj.num_channels = 6
-
-	def loss_process(loss): # apply preprocess to loss
-		loss_recon = config_obj.mask_obj.apply(loss[:,:,:,:3])
-		loss = tf.concat((loss_recon, loss[:,:,:,3:]), -1)
-		return loss
-
-	config_obj.loss_func = ImageMSE(loss_process=loss_process)
-	_preprocessing = config_obj.preprocessing
-	def preprocessing(*args, **kwargs):
-		inputs = _preprocessing(*args, **kwargs)
-		config_obj.mask_obj(inputs)
-		inputs = np.concatenate((inputs, config_obj.mask_obj.mask), -1)
-		return inputs
-
-	config_obj.preprocessing = preprocessing
-
-	if randomize_mask_step:
-		def latent_space_distance():
-			mean = 0.2
-			std = 0.05
-			return np.abs(np.random.normal(mean,std))
-
-		mask_obj._default_latent_space_distance = latent_space_distance
-
-	"""
-	class CompConfig(Config):
-		def __init__(self, mask_obj=None):
-			assert not mask_obj is None, "mask_obj must be defined in config for compvae"
-			self.mask_obj = mask_obj
-			super().__init__()
-		
-		def _set_model(self):
-			super()._set_model()
-			self.num_channels = 6
-		
-		def _set_training(self):
-			super()._set_training()
-			def loss_process(loss): # apply preprocess to loss
-				loss_recon = self.mask_obj.apply(loss[:,:,:,:3])
-				loss = tf.concat((loss_recon, loss[:,:,:,3:]), -1)
-				return loss
-			self.loss_func = ImageMSE(loss_process=loss_process) 
-		
-		def preprocessing(self, *args, **kwargs):
-			inputs = super().preprocessing(*args, **kwargs)
-			self.mask_obj(inputs)
-			inputs = np.concatenate((inputs, self.mask_obj.mask), -1)
-			return inputs
-	"""
-	return config_obj
