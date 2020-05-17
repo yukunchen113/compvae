@@ -4,16 +4,17 @@ import shutil
 import time
 import multiprocessing
 from core.model.handler import ModelHandler, DualModelHandler
+import os
 
-def randomize_mask_step_experiment():
+def randomize_mask_step_experiment(rootpath = "exp"):
 	# use pretrained mask
-	mask_model_path = "exp/mask_only/beta_30"
+	mask_model_path = os.path.join(rootpath, "mask_only/beta_30")
 	mask_config = cfg.config.Config64()
 	mask_config.beta_value = 30
 	mask_handler = ModelHandler(mask_model_path, mask_config)
 
 
-	base_path = "exp/train_both/randomized_mask_step"
+	base_path = os.path.join(rootpath, "train_both/randomized_mask_step")
 	# use mask config above
 	#mask_config = cfg.config.Config64()
 	#mask_config.beta_value = 30
@@ -30,27 +31,27 @@ def randomize_mask_step_experiment():
 	model_handler.save()
 	model_handler.train()
 
-def pretrain_experiment():
+def pretrain_experiment(mbeta, mrandom_seed, mis_train, cbeta, clof, crandom_seed, rootpath="exp"):
 	# we train it here so we keep these parameters
-	mask_model_path = "exp/mask_only/beta_30"
+	mask_model_path = os.path.join(rootpath, "mask_only/beta_%d_seed_%d"%(mbeta, mrandom_seed))
 	mask_config = cfg.config.Config64()
-	mask_config.beta_value = 30
+	mask_config.beta_value = mbeta
+	mask_config.random_seed = mrandom_seed
 	mask_handler = ModelHandler(mask_model_path, mask_config)
-	#mask_handler.save()
-	#mask_handler.train()
 
-	base_path = "exp/test"
-	# use mask config above
-	#mask_config = cfg.config.Config64()
-	#mask_config.beta_value = 30
+	if mis_train:
+		train_path = "train_both"
+	else:
+		train_path = "comp_only"
+	base_path = os.path.join(rootpath, "pretrain_mask", train_path, "cbeta_%d_seed_%d_clof_%d"%(cbeta, crandom_seed, clof))
 	comp_config = cfg.config.Config256()
-	comp_config.beta_value = 500
-	comp_config.mask_latent_of_focus = 8#int(input("please enter latent of focus: ")) # pause for analysis
-
+	comp_config.beta_value = cbeta
+	comp_config.mask_latent_of_focus = clof #int(input("please enter latent of focus: ")) # pause for analysis
+	comp_config.random_seed = crandom_seed
 
 	# run model without combining (this will stop the activation of model). Model activation include loading previous models.
 	# this will only create directories.
-	mask_config.is_train=False
+	mask_config.is_train=mis_train
 	model_handler = DualModelHandler(base_path, mask_config, comp_config, train_new=False, is_combine_models=False)
 	
 	# copy the previously trained mask file
@@ -61,24 +62,40 @@ def pretrain_experiment():
 	model_handler.save()
 	model_handler.train()
 
-def run_masks(beta=30, random_seed=1):
+def run_mask(beta=30, random_seed=1, rootpath = "exp"):
 	# we train it here so we keep these parameters
-	mask_model_path = "exp/mask_only/beta_%d_seed_%d"%(beta, random_seed)
+	
+	mask_model_path = os.path.join(rootpath, "mask_only/beta_%d_seed_%d"%(beta, random_seed))
 	print("running %s"%mask_model_path)
 	mask_config = cfg.config.Config64()
 	mask_config.beta_value = beta
 	mask_config.random_seed = random_seed
-	mask_handler = ModelHandler(mask_model_path, mask_config)
+	mask_handler = ModelHandler(mask_model_path, mask_config,train_new=True)
 	mask_handler.save()
 	mask_handler.train()
 
-if __name__ == '__main__':
-
+def run_masks():
 	betas = [20,25,30]
 	random_seed = [1,10,25,30]
-	
-	args = [(b,r) for b in betas for r in random_seed]
-	with multiprocessing.Pool(5) as pool:
-		pool.starmap(run_masks, args)
+	rootpath = "exp2"
+	args = [(b,r,rootpath) for b in betas for r in random_seed]
+	for k in args:
+		run_mask(*k)
+
+def run_comp():
+	mbeta = 25
+	mrandom_seed = 1
+	mis_train = [True, False]
+	cbeta = 500
+	clof = 7
+	crandom_seed = 1
+	rootpath = "exp2"
+
+	args = [(mbeta, mrandom_seed, i, cbeta, clof, crandom_seed, rootpath) for i in mis_train]
+	with multiprocessing.Pool(2) as pool:
+		pool.starmap(pretrain_experiment, args)
+
+if __name__ == '__main__':
+	run_masks()
 
 	#randomize_mask_step_experiment()

@@ -98,7 +98,7 @@ class TrainVAE():
 
 	@staticmethod
 	def save_image_step(step):
-		steps = [5000]#[1,2,3,5,7,10,15,20,30,40,75,100,200,300,500,700,1000,1500,2500]
+		steps = [500, 1000, 2500, 5000]#[1,2,3,5,7,10,15,20,30,40,75,100,200,300,500,700,1000,1500,2500]
 		return step in steps or step%5000 == 0
 	
 	@staticmethod

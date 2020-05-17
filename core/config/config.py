@@ -3,7 +3,7 @@
 import tensorflow as tf
 import utils as ut 
 import numpy as np
-from utilities.standard import ConfigMetaClass, ImageMSE
+from utilities.standard import ConfigMetaClass, ImageMSE, ImageBCE
 from core.train.manager import TrainVAE
 
 #limit GPU usage (from tensiorflow code)
@@ -58,7 +58,7 @@ class Config(metaclass=ConfigMetaClass):
 	def _set_training(self):
 		self.batch_size = 32
 		self.approve_run = True
-		self.loss_func = ImageMSE()
+		self.loss_func = ImageBCE()
 		self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.0005, beta_1=0.5)
 		self.total_steps = 100000
 		self.model_save_steps = 1000

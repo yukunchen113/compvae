@@ -39,7 +39,7 @@ def import_given_path(name, path):
 
 
 # reconstruction loss
-class ImageMSE():
+class ImageMSE(): # mean squared error
 	def __init__(self, loss_process=lambda x:x):
 		self.loss_process = loss_process
 
@@ -48,6 +48,26 @@ class ImageMSE():
 
 		# per point
 		loss = tf.math.squared_difference(actu, pred)
+
+		# apply processing to first 3 channels
+		loss = self.loss_process(loss)
+
+		# per sample
+		loss = tf.math.reduce_sum(loss, reduction_axis)
+		# per batch
+		loss = tf.math.reduce_mean(loss)
+		return loss
+
+class ImageBCE(): # binary cross entropy
+	def __init__(self, loss_process=lambda x:x):
+		self.loss_process = loss_process
+
+	def __call__(self, actu, pred):
+		reduction_axis = range(1,len(actu.shape))
+
+		# per point
+		sbf = actu.shape
+		loss = actu*(-tf.math.log(pred))+(1-actu)*(-tf.math.log(1-pred))
 
 		# apply processing to first 3 channels
 		loss = self.loss_process(loss)
