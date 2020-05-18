@@ -11,11 +11,7 @@ def make_mask_config(config_obj):
 	Args:
 		config_obj (class): config object
 	"""
-	def _get_model(*args, **kwargs):
-		model = CondVAE(*args, **kwargs)
-		return model
-
-	config_obj._get_model = _get_model
+	config_obj._get_model = CondVAE
 
 	def hparam_schedule(steps):
 		# use increasing weight hyper parameter

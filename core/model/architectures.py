@@ -36,7 +36,6 @@ class CondVAE(BetaTCVAE):
 		return tc + model_kl_loss
 
 
-
 def main():
 	inputs = np.random.normal(size=(32,64,64,3))
 	cond_logvar = np.random.normal(size=(32,10)).astype(np.float32)

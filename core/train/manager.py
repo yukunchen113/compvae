@@ -188,6 +188,7 @@ class DualTrainer():
 							cond_mean=cond_mean, 
 							gamma=gamma, 
 							latent_to_condition=self.ctr_obj.mask_latent_of_focus)
+			input()
 			if measure_time: timer_func("taped gradients")
 
 			# optimize models
@@ -210,7 +211,7 @@ class DualTrainer():
 			if self.mtr_obj.save_image_step(step):
 				self.mtr_obj.save_image(step)
 				self.ctr_obj.save_image(step)
-
+				pass
 			# save model weights
 			if step%model_save_steps == 0:
 				self.mtr_obj.save_model_weights()

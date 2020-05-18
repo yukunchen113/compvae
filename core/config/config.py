@@ -54,7 +54,8 @@ class Config(metaclass=ConfigMetaClass):
 		self.num_latents = 10
 		self.num_channels = 3
 		self.beta_value = 30
-
+		self._get_model = ut.tf_custom.architectures.variational_autoencoder.BetaTCVAE
+		
 	def _set_training(self):
 		self.batch_size = 32
 		self.approve_run = True
@@ -64,11 +65,6 @@ class Config(metaclass=ConfigMetaClass):
 		self.model_save_steps = 1000
 		self.is_train = True
 		self.TrainVAE = TrainVAE
-
-	def _get_model(self, *args, **kwargs):
-		model = ut.tf_custom.architectures.variational_autoencoder.BetaTCVAE(
-			*args, **kwargs)
-		return model
 
 	def get_model(self, *args, **kwargs):
 		model = self._get_model(*args, **kwargs)

@@ -1,34 +1,25 @@
 import tensorflow as tf
 import time
-from model import ModelHandler, DualModelHandler
-from utilities.mask import Mask
-import config as cfg 
+from core.model.handler import ModelHandler, DualModelHandler
+from utilities.mask import Mask, mask_traversal
+import core.config.config as cfg 
 import sys
 import os
 import matplotlib.pyplot as plt
-import utilities
 import numpy as np
 import utils as ut
 import imageio
 import shutil
-def show_model(path):
-	modelhandler = DualModelHandler(base_path=path, train_new=False, load_model=True)
-	inputs_test = modelhandler.comp_mh.config.inputs_test[1:3]
-	model = modelhandler.mask_mh
-	inputs_test = model.config.preprocessing(inputs_test)
-	"""
-	model.model(inputs_test)[:,:,:,:3]
+import execute
 
-	# model kl evaluation
-	_, mu, sig = model.model.get_latent_space()
-	print(np.average(mu,0))
-	print(np.average(sig,0))
-	kldiv = ut.tf_custom.loss.kl_divergence_with_normal(mu, sig)
-	avg_kl = np.average(kldiv, 0)
-	print(avg_kl>1/3*np.amax(avg_kl))
-	"""
-	traversal = utilities.mask.mask_traversal(
-		model.model,
+
+def show_model(model_path, gif_path, lof=None):
+	modelhandler = ModelHandler(base_path=model_path, train_new=False, load_model=True)
+	inputs_test = modelhandler.config.inputs_test[1:5]
+	inputs_test = modelhandler.config.preprocessing(inputs_test)
+
+	traversal = mask_traversal(
+		modelhandler.model,
 		inputs_test,
 		return_traversal_object=True, 
 		is_visualizable=False,
@@ -36,38 +27,26 @@ def show_model(path):
 		min_value=-3,
 		max_value=3
 		)
+	traversal.save_gif(gif_path,lof)
+
+def show_model_given_args():
+	model_path = sys.argv[1]
+	lof = None if len(sys.argv) < 2 else int(sys.argv[2])
 	gif_path = "test.gif"
-	traversal.save_gif(gif_path, 3)
+	show_model(model_path, gif_path, lof)
+
+def main():
+	# load models
+	betas = [10,15,30,40,50]
+	random_seed = [1,10,25,30]
+	rootpath = "exp2"
+	args = [(b, r, rootpath, False) for b in betas for r in random_seed]
+	
+	# iterate through each model
+	for a in args:
+		model_handler = execute.run_mask(*a)
 
 
-	#plt.imshow(generated)
-	#plt.show()
-	"""
-	import matplotlib.animation as animation
 
-	fig = plt.figure()
-
-	ims = []
-	for i in generated[:-1,3]:
-		im = 
-		ims.append([im])
-	ims=ims+ims[::-1]
-	ani = animation.ArtistAnimation(fig, ims, interval=50, blit=True,
-									repeat_delay=0)
-
-	# ani.save('dynamic_images.mp4')
-
-	plt.show()
-	#"""
-
-	"""
-	mask_obj = Mask(model.model, 1)
-	mask_obj(inputs_test)
-	generated = mask_obj.view_mask_traversals(inputs_test)
-
-	plt.imshow(generated)
-	plt.show()
-	#"""
 if __name__ == '__main__':
-	path = sys.argv[1]
-	show_model(path)
+	main()
