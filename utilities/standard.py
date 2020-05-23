@@ -27,6 +27,19 @@ class ConfigMetaClass(type):
 		"""
 		return type.__new__(cls, name, bases, body)
 
+
+class GPUMemoryUsageMonitor:
+	def __init__(self):
+		from pynvml.smi import nvidia_smi
+		self.nvsmi = nvidia_smi.getInstance()
+	def get_memory_usage(self, gpu_num=0):
+		"""returns amount of memory used on gpus as string
+		"""
+		memory_usage = self.nvsmi.DeviceQuery('memory.free, memory.total')
+		mem_dict = memory_usage["gpu"][gpu_num]["fb_memory_usage"]
+		return str(mem_dict["total"]-mem_dict["free"])+" "+mem_dict["unit"]
+
+
 #################
 # Regular Utils #
 #################

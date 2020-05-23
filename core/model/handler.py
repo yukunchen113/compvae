@@ -101,10 +101,10 @@ class ModelHandler:
 		config = self.config
 
 		# define training configureation
-		training_object = self._configure_train()
+		self.training_object = self._configure_train()
 
 		#run training
-		training_object(model_save_steps=config.model_save_steps, 
+		self.training_object(model_save_steps=config.model_save_steps, 
 				total_steps=config.total_steps, measure_time=measure_time)
 		print("finished beta %d"%config.beta_value)
 
@@ -230,10 +230,10 @@ class DualModelHandler():
 	
 	def train(self, measure_time=False):
 		# define training configureation
-		training_object = self._configure_train()
+		self.training_object = self._configure_train()
 
 		#run training
-		training_object(model_save_steps=self.mask_config.model_save_steps, 
+		self.training_object(model_save_steps=self.mask_config.model_save_steps, 
 				total_steps=self.mask_config.total_steps, measure_time=measure_time)
 		print("finished")
 

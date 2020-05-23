@@ -60,5 +60,4 @@ def make_comp_config(config_obj, mask_obj, randomize_mask_step=False):
 			return np.abs(np.random.normal(mean,std))
 
 		mask_obj._default_latent_space_distance = latent_space_distance
-
 	return config_obj

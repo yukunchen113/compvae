@@ -11,9 +11,10 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 for i in gpus:
 	tf.config.experimental.set_memory_growth(i, True)
 
-def _get_inputs_test_handles(group_size, dataset_manager, dataset):
-	dataset(group_size, False, True)
-	return dataset_manager.last_group_list
+def _get_inputs_test_handles(group_size, dataset_manager):
+	gl = dataset_manager.groups_list
+	dataset_manager.groups_list = gl[group_size:]
+	return gl[:group_size]
 
 class Config(metaclass=ConfigMetaClass):
 	"""
@@ -26,7 +27,7 @@ class Config(metaclass=ConfigMetaClass):
 		self._set_dataset()
 		self._set_model()
 		self._set_training()
-
+		
 	def _set_paths(self):
 		self.image_dir = "images"
 		self.model_setup_dir = "model_setup"
@@ -40,7 +41,7 @@ class Config(metaclass=ConfigMetaClass):
 			ut.general_constants.datapath, 
 			is_HD=False,
 			group_num=8)
-		self.inputs_test_handle = _get_inputs_test_handles(2, self.dataset_manager, self.dataset)
+		self.inputs_test_handle = _get_inputs_test_handles(2, self.dataset_manager)
 
 	@property
 	def inputs_test(self):
@@ -80,6 +81,7 @@ class Config(metaclass=ConfigMetaClass):
 		inputs = tf.image.convert_image_dtype(inputs, tf.float32)
 		inputs = tf.image.resize(inputs, final_image_size)
 		return inputs
+	
 
 class Config64(Config):
 	def _set_dataset(self):
@@ -87,7 +89,7 @@ class Config64(Config):
 			ut.general_constants.datapath, 
 			is_HD=64,
 			group_num=8)
-		self.inputs_test_handle = _get_inputs_test_handles(2, self.dataset_manager, self.dataset)
+		self.inputs_test_handle = _get_inputs_test_handles(2, self.dataset_manager)
 	
 	def preprocessing(self, inputs, image_crop_size=[50,50], final_image_size=[64,64]):
 		input_shape = inputs.shape[1:-1]
@@ -103,7 +105,7 @@ class Config256(Config):
 			ut.general_constants.datapath, 
 			is_HD=256,
 			group_num=8)
-		self.inputs_test_handle = _get_inputs_test_handles(2, self.dataset_manager, self.dataset)
+		self.inputs_test_handle = _get_inputs_test_handles(2, self.dataset_manager)
 
 	def _set_training(self):
 		super()._set_training()
