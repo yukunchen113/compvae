@@ -27,6 +27,16 @@ class ConfigMetaClass(type):
 		"""
 		return type.__new__(cls, name, bases, body)
 
+class TrainObjMetaClass(type):
+	"""
+	metaclass to control Train objects.
+	Config must only have static methods.
+	This only need to be used by config_default, other configs
+	should inhereit from config_default
+	"""
+	def __new__(cls, name, bases, body):
+		assert "train_step" in body and callable(body["train_step"]), "TrainObj must have a method called train_step which is called to run one interation"				
+		return type.__new__(cls, name, bases, body)
 
 class GPUMemoryUsageMonitor:
 	def __init__(self):

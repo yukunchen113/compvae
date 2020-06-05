@@ -1,8 +1,214 @@
-from utils.tf_custom.architectures.variational_autoencoder import BetaTCVAE
+from utils.tf_custom.architectures.variational_autoencoder import BetaTCVAE, BetaVAE 
 from utils.other_library_tools.disentanglementlib_tools import total_correlation 
 from utils.tf_custom.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
 import numpy as np
 import tensorflow as tf
+from functools import reduce
+def split_latent_into_layer(inputs, num_latents):
+	mean = inputs[:,:num_latents]
+	logvar = inputs[:,num_latents:]
+	sample = tf.exp(0.5*logvar)*tf.random.normal(
+		tf.shape(logvar))+mean
+	return sample, mean, logvar
+
+class LatentSpace():
+	def __init__(self, shape, num_latents, activation=tf.keras.activations.linear):
+		self.num_latents = num_latents
+		self.activation = activation
+
+		# build model
+		input_layer = tf.keras.Input(shape=shape)
+		flatten_layer = tf.keras.layers.Flatten()
+		dense_layer = tf.keras.layers.Dense(self.num_latents*2, activation=self.activation)
+		self.latent_layer = tf.keras.Sequential([input_layer, flatten_layer, dense_layer])
+
+		# future set:
+		self.decode_layer = None
+		self.latent_space = None
+
+	def set_decode(self, shape):
+		fshape = reduce(lambda x,y: x*y, shape)
+		input_layer = tf.keras.Input(self.num_latents)
+		dense_layer = tf.keras.layers.Dense(fshape, activation=self.activation)
+		reshape_layer = tf.keras.layers.Reshape(shape)
+		self.decode_layer = tf.keras.Sequential([input_layer, 
+				dense_layer, reshape_layer])
+	def run_decode(self, samples):
+		return self.decode_layer(samples)
+
+	def __call__(self, inputs):
+		# will create latent space block given inputs
+		out = self.latent_layer(inputs)
+		self.latent_space = split_latent_into_layer(out, self.num_latents)
+		return self.latent_space
+
+def is_weighted_layer(layer):
+	return bool(layer.weights)
+
+def get_weighted_layers(layers):
+	return [l for l in layers if is_weighted_layer(l)]
+
+class ProVLAE(BetaVAE):
+	"""
+	Creation:
+		- create base VAE architecture,
+		- create latent bridge between encoder and decoder given layer selection
+			- create linear encoder latent space
+			- double the num channels in corresponding decoder architecture to prep
+				for concatenation
+			- reshape encoder latent space 
+
+
+	Requirements:
+		- access any layer of architecture through layer num
+
+	Assumptions
+		- encoder and decoder are mirrored
+
+	TODO:
+		- specified layers only work with conv layers right now, not dense layers
+	"""
+	def __init__(self, beta, latent_connections=None, gamma=0.5, name="ProVLAE", **kwargs):
+		self.latent_connections = latent_connections
+		self.gamma = gamma
+		super().__init__(name=name, beta=beta, **kwargs)
+
+		self.alpha = None
+		self.latent_space = None
+
+	def _setup(self):
+		self._setup_encoder()
+		self._setup_decoder()
+		self._check_valid_architecture()
+
+	def _check_valid_architecture(self):
+		for i,j in zip(self._encoder_layer_sizes, self._decoder_layer_sizes[::-1]):
+			if not tuple(i)==tuple(j):
+				string = "\n".join(["ENC:%s DEC:%s"%(i,j) for i,j in zip(self._encoder_layer_sizes,self._decoder_layer_sizes[::-1])])
+				raise Exception("Invalid ProVLAE architecture, output of layers must be reflected\n%s"%string)
+
+	def _setup_encoder(self):
+		#print("ENCODER:")
+		self._encoder_layer_sizes = [tuple(self.encoder.shape_input)]
+		layer_objects = self.encoder.layer_objects
+		model_layers = get_weighted_layers(layer_objects.layers)
+
+		available_layers = len(model_layers)-2  # do not include last 2 layers, which is the last latent layer
+		if not self.latent_connections is None:
+			for i in self.latent_connections:
+				assert i < available_layers, "invalid specified layers. Must be any of the following %s"%(list(range(available_layers)))
+
+		# get latent connections:
+		if self.latent_connections is None:
+			lc = range(available_layers)
+		else:
+			lc = self.latent_connections
+		
+		# get latent connections (layer creation)
+		self.latent_layers = []
+		for i,layer in enumerate(model_layers):
+			self._encoder_layer_sizes.append(layer.output_shape[1:])
+			if i in lc:
+				#print("Connecting layer:", layer.name)
+				shape = layer.output_shape[1:]
+				self.latent_layers.append(LatentSpace(shape, self.num_latents))
+			else:
+				self.latent_layers.append(None)
+
+	def _setup_decoder(self):
+		#print("\nDECODER:")
+		self._decoder_layer_sizes = []
+		layer_objects = self.decoder.layer_objects
+		layers = layer_objects.layers
+		weighted_layers = get_weighted_layers(layers)
+		modified_decoder_layers = []
+		for model_layer, latent_layer in zip(weighted_layers, self.latent_layers[::-1]):
+			# setup decoder latent space
+			self._decoder_layer_sizes.append(model_layer.output_shape[1:])
+			if not latent_layer is None:
+				shape = model_layer.input_shape[1:]
+				latent_layer.set_decode(shape) # this will set original due to shallow copy
+		
+			# setup decoder input channels
+			if not latent_layer is None:
+				input_shape = list(model_layer.input_shape)
+				input_shape[-1] *=2
+				model_layer.build(input_shape) # this successfully modifies the input even through the layer.input_shape would still be unchanged
+
+	def get_config(self):
+		config_param = {
+			**super().get_config(),
+			"latent_connections":str(list(self.latent_connections))}
+		return config_param
+
+	def get_latent_space(self):
+		return self.latent_space
+
+	def call(self, inputs, alpha=None):
+		# alpha is list of size num latent_space
+		#called during each training step and inference
+		#TBD: run latent space and next layer in parallel
+		self.latent_space = []
+		if alpha is None:
+			alpha = self.alpha
+		else:
+			self.alpha = alpha # save latest alpha
+
+		if alpha is None:
+			alpha = [1]*len(self.encoder.layer_objects.layers) # latent_space size is unknown, so use all possible as worst case
+
+		# run encoder layer by layer
+		enc_layers = self.encoder.layer_objects.layers
+		valid_layer_num = 0
+		layer_output = inputs
+		for layer in enc_layers:
+			layer_output = layer(layer_output)
+			if is_weighted_layer(layer): # check
+				ls = self.latent_layers[valid_layer_num]
+				if not ls is None:
+					self.latent_space.append(ls(alpha[len(self.latent_space)]*layer_output))
+				valid_layer_num+=1
+
+		top_level_latent_space = split_latent_into_layer(alpha[len(self.latent_space)]*layer_output, self.num_latents)
+		self.latent_space.append(top_level_latent_space) # highest level latent
+
+		# run decoder layer by layer:
+		dec_layers = self.decoder.layer_objects.layers
+		layer_output = top_level_latent_space[0] # get samples from last layer
+		valid_layer_num = -1
+		alpha_num = -1
+		for layer in dec_layers:
+			if is_weighted_layer(layer): # check
+				ls = self.latent_layers[valid_layer_num]
+				if not ls is None:
+					samples = ls.latent_space[0]
+					additional_recon = alpha[alpha_num]*ls.run_decode(samples)
+					layer_output = tf.concat((
+						additional_recon,
+						layer_output),-1)
+					alpha_num-=1
+				valid_layer_num-=1
+			layer_output = layer(layer_output)
+
+		# get reconstruction and regularization loss
+		reconstruction = layer_output
+		for losses in self.provlae_regularizer(self.latent_space, alpha):
+			self.add_loss(losses)
+
+		return reconstruction
+
+	def provlae_regularizer(self, latent_space, alpha):
+		#regularizer creation for each specified layer.
+		# use regularizations from parent vae
+		losses = []
+		for i,ls in enumerate(latent_space):
+			if alpha[i]:
+				losses.append(self.beta*self.regularizer(*ls))
+			else:
+				losses.append(self.gamma*self.regularizer(*ls))
+		return losses
+
+
 
 class CondVAE(BetaTCVAE):
 	def __init__(self, beta, name="CondVAE", **kwargs):
@@ -35,7 +241,7 @@ class CondVAE(BetaTCVAE):
 
 		return tc + model_kl_loss
 
-def main():
+def test_condvae():
 	inputs = np.random.normal(size=(32,64,64,3))
 	cond_logvar = np.random.normal(size=(32,10)).astype(np.float32)
 	cond_mean = np.random.normal(size=(32,10)).astype(np.float32)
@@ -46,5 +252,9 @@ def main():
 	mask(inputs, cond_sampled, cond_logvar, cond_mean)
 	print(len(mask.losses))
 
+def test_provlae():
+	model = ProVLAE()
+
+
 if __name__ == '__main__':
-	main()
+	test_provlae()

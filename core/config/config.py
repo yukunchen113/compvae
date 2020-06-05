@@ -35,6 +35,7 @@ class Config(metaclass=ConfigMetaClass):
 		# save files
 		self.model_save_file = "model_weights.h5" # model weights save file
 		self.model_parameters_path = "model_parameters.txt"
+		self.train_status_path = "train_status.npz"
 
 	def _set_dataset(self):
 		self.dataset_manager, self.dataset = ut.dataset.get_celeba_data(
@@ -54,7 +55,7 @@ class Config(metaclass=ConfigMetaClass):
 		self.random_seed = None
 		self.num_latents = 10
 		self.num_channels = 3
-		self.beta_value = 30
+		self.beta = 30
 		self._get_model = ut.tf_custom.architectures.variational_autoencoder.BetaTCVAE
 		
 	def _set_training(self):

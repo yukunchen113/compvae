@@ -25,13 +25,18 @@ class OptimizerManager():
 		return self.model.get_latent_space()
 	
 
-	def tape_gradients(self, inputs):
+	def tape_gradients(self, inputs, timer_func=None, **kwargs):
 		with tf.GradientTape() as tape:
-			reconstruct = self.model(inputs)
-
-			regularization_loss = kld_loss_reduction(self.model.losses[0])
+			reconstruct = self.model(inputs, **kwargs)
+			if not timer_func is None: timer_func("OPTIMIZER: got reconstruction")
+			
+			regularization_loss = 0
+			for l in self.model.losses:
+				regularization_loss += kld_loss_reduction(l)
+			
 			# get loss
 			reconstruction_loss = self.loss_func(inputs, reconstruct)
+			if not timer_func is None: timer_func("OPTIMIZER: got reconstruct loss")
 
 			loss = reconstruction_loss+regularization_loss 
 
@@ -44,8 +49,10 @@ class OptimizerManager():
 		if self.is_train:
 			self.optimizer.apply_gradients(zip(self.grads, self.model.trainable_weights))
 
+
+
 class CondOptimizerManager(OptimizerManager):
-	def tape_gradients(self, inputs, cond_logvar, cond_mean, gamma, latent_to_condition):
+	def tape_gradients(self, inputs, cond_logvar, cond_mean, gamma, latent_to_condition, timer_func=None):
 		"""Cond optimizer for the Cond model.
 		"""
 		with tf.GradientTape() as tape:
@@ -60,8 +67,13 @@ class CondOptimizerManager(OptimizerManager):
 			# get loss
 			reconstruction_loss = self.loss_func(inputs, reconstruct)
 
-			regularization_loss = kld_loss_reduction(self.model.losses[0])
+			regularization_loss = 0
+			for l in self.model.losses:
+				regularization_loss += kld_loss_reduction(l)
+
 			loss = reconstruction_loss+regularization_loss 
 		self.reconstruction_loss = reconstruction_loss
 		self.regularization_loss = regularization_loss
 		return tape, loss
+
+
