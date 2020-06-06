@@ -164,7 +164,7 @@ class TrainProVLAE(TrainVAE):
 	def save_image(self, step):
 		pass
 	def train_step(self, *ar, **kw):
-		super().train_step(*ar, **kw)
+		return super().train_step(*ar, **kw)
 
 
 class DualTrainer(TrainObj):

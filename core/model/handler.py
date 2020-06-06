@@ -78,6 +78,9 @@ class ModelHandler:
 			beta=config.beta, 
 			num_latents=config.num_latents, 
 			num_channels=config.num_channels)
+		
+		#self.model.save_weights(self.model_save_file)
+
 		if load_prev and os.path.exists(self.model_save_file):
 			print("found existing model weights. Loading...")
 			self.model.load_weights(self.model_save_file)
@@ -207,15 +210,16 @@ class ProVLAEModelHandler(ModelHandler):
 			gamma = config.gamma,
 			num_latents=config.num_latents, 
 			num_channels=config.num_channels)
+
 		if load_prev and os.path.exists(self.model_save_file):
 			print("found existing model weights. Loading...")
 			self.model.load_weights(self.model_save_file)
 			print("Done")
 
-	def _configure_train(self, hparam_schedule=None, **kwargs):
+	def _configure_train(self, *args, hparam_schedule=None, **kwargs):
 		if hparam_schedule is None:
 			hparam_schedule = self.config.hparam_schedule
-		return super()._configure_train(hparam_schedule=hparam_schedule, **kwargs)
+		return super()._configure_train(*args, hparam_schedule=hparam_schedule, **kwargs)
 	
 
 
