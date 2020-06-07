@@ -16,14 +16,11 @@ def make_vlae_compatible(config_obj):
 		alpha[1] = np.clip((step-20000)/10000, 0, 1) # after the first 20000 steps, evolve alpha for 10000
 		alpha[0] = np.clip((step-40000)/10000, 0, 1)
 		return dict(alpha=alpha)
-	# hyper parameter setup
-	config_obj.gamma = 0.5
-	config_obj.num_latents = 3
-	config_obj.beta = 5
 
 	# model parameter setup
-	config_obj.latent_connections = [1,3]
-	config_obj.hparam_schedule = hparam_schedule
+	if not hasattr(config_obj, "gamma"): config_obj.gamma = 0.5
+	if not hasattr(config_obj, "latent_connections"): config_obj.latent_connections = [1,3]
+	if not hasattr(config_obj, "hparam_schedule"): config_obj.hparam_schedule = hparam_schedule
 
 	# training object
 	config_obj.TrainVAE = TrainProVLAE

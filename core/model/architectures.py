@@ -118,7 +118,26 @@ class ProVLAE(BetaVAE):
 			else:
 				self.latent_layers.append(None)
 
-		
+
+		# set call
+		def call(inputs):
+			latent_space = []
+			enc_layers = self._encoder.layer_objects.layers
+			valid_layer_num = 0
+			layer_output = inputs
+			for layer in enc_layers:
+				layer_output = layer(layer_output)
+				if is_weighted_layer(layer): # this if will not be triggered for last two layers (latent layer and layer leading up to it)
+					ls = self.latent_layers[valid_layer_num]
+					if not ls is None:
+						latent_space.append(ls(self.alpha[len(latent_space)]*layer_output))
+					valid_layer_num+=1
+
+			latent_space.append(split_latent_into_layer(self.alpha[len(latent_space)]*layer_output, self.num_latents)) # highest level latent
+			return latent_space
+
+		self._encoder.call = call
+
 
 
 	def _setup_decoder(self):
@@ -142,7 +161,27 @@ class ProVLAE(BetaVAE):
 					input_shape = list(model_layer.input_shape)
 					input_shape[-1] *=2
 					model_layer.build(input_shape) # this successfully modifies the input even through the layer.input_shape would still be unchanged
-
+		
+		def call(latent_space):
+			dec_layers = self._decoder.layer_objects.layers
+			layer_output = latent_space[-1] # get samples from last layer
+			valid_layer_num = -1
+			alpha_num = -1
+			for layer in dec_layers:
+				if is_weighted_layer(layer): # check
+					ls = self.latent_layers[valid_layer_num]
+					if not ls is None:
+						samples = latent_space[alpha_num-1]
+						additional_recon = self.alpha[alpha_num]*ls.run_decode(samples)
+						layer_output = tf.concat((
+							additional_recon,
+							layer_output),-1)
+						alpha_num-=1
+					valid_layer_num-=1
+				layer_output = layer(layer_output)
+			reconstruction = layer_output
+			return reconstruction
+		self._decoder.call = call
 
 	def get_config(self):
 		config_param = {
@@ -152,7 +191,6 @@ class ProVLAE(BetaVAE):
 
 	def get_latent_space(self):
 		return self.latent_space
-
 
 	@property
 	def alpha(self):
@@ -170,43 +208,9 @@ class ProVLAE(BetaVAE):
 		#TBD: run latent space and next layer in parallel
 		self.alpha = alpha
 
-
-		# run encoder layer by layer
-		self.latent_space = []
-		enc_layers = self._encoder.layer_objects.layers
-		valid_layer_num = 0
-		layer_output = inputs
-		for layer in enc_layers:
-			layer_output = layer(layer_output)
-			if is_weighted_layer(layer): # check
-				ls = self.latent_layers[valid_layer_num]
-				if not ls is None:
-					self.latent_space.append(ls(self.alpha[len(self.latent_space)]*layer_output))
-				valid_layer_num+=1
-
-		top_level_latent_space = split_latent_into_layer(self.alpha[len(self.latent_space)]*layer_output, self.num_latents)
-		self.latent_space.append(top_level_latent_space) # highest level latent
-
-		# run decoder layer by layer:
-		dec_layers = self._decoder.layer_objects.layers
-		layer_output = top_level_latent_space[0] # get samples from last layer
-		valid_layer_num = -1
-		alpha_num = -1
-		for layer in dec_layers:
-			if is_weighted_layer(layer): # check
-				ls = self.latent_layers[valid_layer_num]
-				if not ls is None:
-					samples = ls.latent_space[0]
-					additional_recon = self.alpha[alpha_num]*ls.run_decode(samples)
-					layer_output = tf.concat((
-						additional_recon,
-						layer_output),-1)
-					alpha_num-=1
-				valid_layer_num-=1
-			layer_output = layer(layer_output)
-
+		self.latent_space = self.encoder(inputs)
+		reconstruction = self.decoder([i[0] for i in self.latent_space])
 		# get reconstruction and regularization loss
-		reconstruction = layer_output
 		for losses in self.provlae_regularizer(self.latent_space, self.alpha):
 			self.add_loss(losses)
 

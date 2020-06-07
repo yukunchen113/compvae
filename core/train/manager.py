@@ -133,9 +133,13 @@ class TrainVAE(TrainObj):
 			hparams = self.hparam_schedule(step)
 		tape, loss = self.opt_man.tape_gradients(inputs, **hparams)
 		if not timer_func is None: timer_func("taped gradients")
+	
+		if np.isnan(loss.numpy()):
+			return np.nan
 
 		self.opt_man.run_optimizer(tape, loss)
 		if not timer_func is None: timer_func("applied gradients")
+
 
 		print("step %d\r"%step, end="")
 		if self.print_step(step):
