@@ -10,6 +10,7 @@ import time
 import shutil
 from utilities.standard import image_traversal, kld_loss_reduction, ImageMSE, GPUMemoryUsageMonitor, TrainObjMetaClass
 from utilities.mask import mask_traversal
+from utilities.vlae_method import vlae_traversal
 from functools import reduce
 from .optimizer import OptimizerManager, CondOptimizerManager
 
@@ -73,6 +74,9 @@ class TrainVAE(TrainObj):
 		self.reconstruction_loss = None
 		self.regularization_loss = None
 
+		# image visualize items
+		self.image_visualize = [1,5]
+
 	def make_new_save_dir(self, approve_run):
 		"""Creates a new save directory
 		
@@ -105,9 +109,9 @@ class TrainVAE(TrainObj):
 		self.model.save_weights(self.model_save_file)
 
 	def save_image(self, step):
-		t_im = image_traversal(
+		t_im = mask_traversal(
 			self.model,
-			self.preprocess(inputs=self.inputs_test[1:3]),
+			self.preprocess(inputs=self.inputs_test[self.image_visualize]),
 			min_value=-3, 
 			max_value=3, 
 			num_steps=30, 
@@ -165,8 +169,17 @@ class TrainVAE(TrainObj):
 		return step
 
 class TrainProVLAE(TrainVAE):
+	#def save_image(self, step):
+	#	pass
 	def save_image(self, step):
-		pass
+		t_im = vlae_traversal(
+			self.model,
+			self.preprocess(inputs=self.inputs_test[self.image_visualize]),
+			min_value=-3, 
+			max_value=3, 
+			num_steps=30, 
+			return_traversal_object=True)
+		t_im.save_gif(os.path.join(self.image_dir, "%d.gif"%step))
 	def train_step(self, *ar, **kw):
 		return super().train_step(*ar, **kw)
 

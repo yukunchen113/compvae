@@ -1,7 +1,7 @@
 import tensorflow as tf
 import time
 from core.model.handler import ModelHandler, DualModelHandler
-from utilities.mask import Mask, mask_traversal
+from utilities.vlae_method import vlae_traversal
 import core.config.config as cfg 
 import sys
 import os
@@ -17,7 +17,7 @@ def show_model(modelhandler, gif_path, lof=None, num_images=4):
 	inputs_test = modelhandler.config.inputs_test[1:1+num_images]
 	inputs_test = modelhandler.config.preprocessing(inputs_test)
 
-	traversal = mask_traversal(
+	traversal = vlae_traversal(
 		modelhandler.model,
 		inputs_test,
 		return_traversal_object=True, 
@@ -37,7 +37,7 @@ def show_model_given_args():
 
 
 class GifCreator:
-	def __init__(self, gif_folder="test/test1"):
+	def __init__(self, gif_folder="test/gif_test"):
 		self.gif_folder = gif_folder
 		self.desc_path = "%s/gif_descriptions.md"%gif_folder
 		self.create_gif_paths()
@@ -62,21 +62,25 @@ class GifCreator:
 
 
 def main():
-	gcreate = GifCreator("test/test7")
+	gcreate = GifCreator("test/gif_test_1")
 	
-	mbeta = [10, 25, 50]
-	mrandom_seed = 1
-	mis_train = [True, False]
-	cbeta = 600
-	clof = 4
-	crandom_seed = 1
-	randmask = [True, False]
-	rootpath = "exp3_test"
-	is_tcvae = [True,False]
-	is_pretrain = True
-	args = [[b, mrandom_seed, it, cbeta, clof, crandom_seed, tc, rm, rootpath, is_pretrain, False] for tc in is_tcvae for it in mis_train for rm in randmask for b in mbeta]
+	parameters = OrderedDict(
+		#hparam_schedule = [
+		#	lambda step: hparam_schedule_template(step=step, a=10000, b=20000, c=40000),
+		#	lambda step: hparam_schedule_template(step=step, a=20000, b=20000, c=40000),
+		#	],
+		beta = [2,5,50],
+		random_seed = [1,5,20],
+		gamma = [0.5],
+		num_latents = [3, 10],
+		latent_connections = [None, [1,3], [1,2]])
+	base_path = "exp/exp_"
+	kwargs = mix_parameters(parameters)
+	for i,v in enumerate(kwargs):
+		v["base_path"] = base_path+str(i)
 
-	for a in args:
+
+	for kw in kwargs:
 		modelhandler = execute.pretrain_experiment(*a)
 		for i,mhand in enumerate([modelhandler.mask_mh, modelhandler.comp_mh]):
 			if os.path.exists(mhand.model_save_file):

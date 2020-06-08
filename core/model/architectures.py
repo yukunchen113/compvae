@@ -186,7 +186,8 @@ class ProVLAE(BetaVAE):
 	def get_config(self):
 		config_param = {
 			**super().get_config(),
-			"latent_connections":str(list(self.latent_connections))}
+			"latent_connections":str(list(self.latent_connections)),
+			"gamma":str(self.gamma)}
 		return config_param
 
 	def get_latent_space(self):

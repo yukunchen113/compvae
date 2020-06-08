@@ -203,7 +203,6 @@ class ProVLAEModelHandler(ModelHandler):
 	def create_model(self, load_prev=True):
 		config = self.config
 		tf.random.set_seed(config.random_seed)
-
 		self.model = config.get_model(
 			beta=config.beta,
 			latent_connections = config.latent_connections,
