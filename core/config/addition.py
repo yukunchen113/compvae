@@ -10,16 +10,19 @@ from core.train.manager import TrainProVLAE
 def make_vlae_compatible(config_obj):
 	config_obj._get_model = ProVLAE
 	
-	def hparam_schedule(step):
-		# use increasing weight hyper parameter
-		alpha = [0,0,1]
-		alpha[1] = np.clip((step-20000)/10000, 0, 1) # after the first 20000 steps, evolve alpha for 10000
-		alpha[0] = np.clip((step-40000)/10000, 0, 1)
-		return dict(alpha=alpha)
 
 	# model parameter setup
 	if not hasattr(config_obj, "gamma"): config_obj.gamma = 0.5
 	if not hasattr(config_obj, "latent_connections"): config_obj.latent_connections = [1,3]
+	
+
+	def hparam_schedule(step, a=10000, b=20000):
+		# use increasing weight hyper parameter
+		alpha = [0]*(len(config_obj.latent_connections)+1)
+		alpha[-1] = 1
+		for i in range(1,len(alpha)):
+			alpha[len(alpha)-i-1] = np.clip((step-b*i)/a, 0, 1) # after the first b steps, evolve alpha for a steps
+		return dict(alpha=alpha)
 	if not hasattr(config_obj, "hparam_schedule"): config_obj.hparam_schedule = hparam_schedule
 
 	# training object

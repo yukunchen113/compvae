@@ -81,11 +81,11 @@ def main():
 		#	lambda step: hparam_schedule_template(step=step, a=10000, b=20000, c=40000),
 		#	lambda step: hparam_schedule_template(step=step, a=20000, b=20000, c=40000),
 		#	],
-		beta = [2,5],
+		beta = [5,10],
 		random_seed = [1,5,20],
 		gamma = [0.5],
 		num_latents = [3, 10],
-		latent_connections = [None, [1,3], [1,2], [2]])
+		latent_connections = [[0,1,2,3], [1,3], [1,2]])
 
 	base_path = "exp2/exp_"
 
@@ -111,6 +111,7 @@ def main():
 
 
 	# run processing
+	#run_training(**kwargs_set[0]) # test
 	with multiprocessing.Pool(8) as pool:
 		starmap_with_kwargs(pool, run_training, kwargs_set)
 

@@ -180,6 +180,7 @@ class TrainProVLAE(TrainVAE):
 			num_steps=30, 
 			return_traversal_object=True)
 		t_im.save_gif(os.path.join(self.image_dir, "%d.gif"%step))
+
 	def train_step(self, *ar, **kw):
 		return super().train_step(*ar, **kw)
 

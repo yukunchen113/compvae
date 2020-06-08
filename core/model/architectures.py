@@ -12,8 +12,9 @@ def split_latent_into_layer(inputs, num_latents):
 		tf.shape(logvar))+mean
 	return sample, mean, logvar
 
-class LatentSpace():
-	def __init__(self, shape, num_latents, activation=tf.keras.activations.linear):
+class LatentSpace(tf.keras.layers.Layer):
+	def __init__(self, shape, num_latents, activation=tf.keras.activations.linear, name="LatentSpace"):
+		super().__init__(name=name)
 		self.num_latents = num_latents
 		self.activation = activation
 
@@ -38,7 +39,7 @@ class LatentSpace():
 	def run_decode(self, samples):
 		return self.decode_layer(samples)
 
-	def __call__(self, inputs):
+	def call(self, inputs):
 		# will create latent space block given inputs
 		out = self.latent_layer(inputs)
 		self.latent_space = split_latent_into_layer(out, self.num_latents)
@@ -114,7 +115,7 @@ class ProVLAE(BetaVAE):
 			if i in lc:
 				#print("Connecting layer:", layer.name)
 				shape = layer.output_shape[1:]
-				self.latent_layers.append(LatentSpace(shape, self.num_latents))
+				self.latent_layers.append(LatentSpace(shape, self.num_latents, name="LatentSpace_%d"%(len(self.latent_layers))))
 			else:
 				self.latent_layers.append(None)
 
@@ -186,7 +187,7 @@ class ProVLAE(BetaVAE):
 	def get_config(self):
 		config_param = {
 			**super().get_config(),
-			"latent_connections":str(list(self.latent_connections)),
+			"latent_connections":str(self.latent_connections),
 			"gamma":str(self.gamma)}
 		return config_param
 
