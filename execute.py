@@ -30,10 +30,7 @@ def train_wrapper(func):
 		except tf.errors.UnknownError:
 			time.sleep(np.random.randint(1,3)*60) # wait and try again
 
-
-
-def run_training(base_path, gpu_num=0, **kw):
-	os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_num)
+def create_model(base_path, **kw):
 	import core.config as cfg 
 	from core.model.handler import ProVLAEModelHandler
 	print("Running %s"%base_path)
@@ -41,17 +38,13 @@ def run_training(base_path, gpu_num=0, **kw):
 	for k,v in kw.items():
 		setattr(config, k, v)
 	modhand = ProVLAEModelHandler(config=config, base_path=base_path)
+	return modhand
+
+def run_training(base_path, gpu_num=0, **kw):
+	os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_num)
+	modhand = create_model(base_path=base_path, **kw)
 	modhand.save()
 	train_wrapper(modhand.train)
-
-
-def hparam_schedule_template(step, a=10000, b=20000, c=40000):
-	# use increasing weight hyper parameter
-	alpha = [0,0,1]
-	alpha[1] = np.clip((step-b)/a, 0, 1) # after the first b steps, evolve alpha for a steps
-	alpha[0] = np.clip((step-c)/a, 0, 1) # after the first c steps, evolve alpha for a steps
-	return dict(alpha=alpha)
-
 
 def apply_kwargs(fn, kwargs):
 	return fn(**kwargs)
@@ -81,11 +74,11 @@ def main():
 		#	lambda step: hparam_schedule_template(step=step, a=10000, b=20000, c=40000),
 		#	lambda step: hparam_schedule_template(step=step, a=20000, b=20000, c=40000),
 		#	],
-		beta = [5,10],
+		beta = [1, 5, 7],
 		random_seed = [1,5,20],
-		gamma = [0.5],
-		num_latents = [3, 10],
-		latent_connections = [[0,1,2,3], [1,3], [1,2]])
+		gamma = [0.1],
+		num_latents = [7],
+		latent_connections = [[0,1,2]])
 
 	base_path = "exp2/exp_"
 

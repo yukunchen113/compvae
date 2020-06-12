@@ -139,8 +139,6 @@ class ProVLAE(BetaVAE):
 
 		self._encoder.call = call
 
-
-
 	def _setup_decoder(self):
 		#print("\nDECODER:")
 		self._decoder_layer_sizes = []

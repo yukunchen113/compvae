@@ -12,11 +12,11 @@ def make_vlae_compatible(config_obj):
 	
 
 	# model parameter setup
-	if not hasattr(config_obj, "gamma"): config_obj.gamma = 0.5
-	if not hasattr(config_obj, "latent_connections"): config_obj.latent_connections = [1,3]
+	if not hasattr(config_obj, "gamma"): config_obj.gamma = 0.1
+	if not hasattr(config_obj, "latent_connections"): config_obj.latent_connections = [0,1,2]
 	
 
-	def hparam_schedule(step, a=10000, b=20000):
+	def hparam_schedule(step, a=5000, b=5000):
 		# use increasing weight hyper parameter
 		alpha = [0]*(len(config_obj.latent_connections)+1)
 		alpha[-1] = 1

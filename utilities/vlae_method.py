@@ -3,6 +3,42 @@ import tensorflow as tf
 import numpy as np 
 import importlib.util
 
+
+vlae_encoder_layer_params = [
+	[64,4,2,None],
+	[128,4,2,None],
+	[256,4,2,None],
+	[512,4,2,None],
+	[1024],
+	[1024],
+	]
+
+vlae_decoder_layer_params = [
+	[1024],
+	[1024],
+	[[512,4,1,None], [256,4,2,None]],
+	[[128,4,2,None], [64,4,1,None]],
+	[64,4,2,None],
+	[3,4,2,None],
+	]
+
+vlae_shape_before_flatten = [4,4,512]
+
+vlae_latent_spaces = [
+	[[64,4,2],[64,4,1]],
+	[[128,4,2],[256,4,1]],
+	[[256,4,2],[512,4,1]],
+	]
+
+
+
+
+
+
+
+#################
+# Visualization #
+#################
 class VLAETraversal(ut.visualize.Traversal): #create wrapper for model encoder and decoder
 
 	"""
@@ -30,6 +66,16 @@ class VLAETraversal(ut.visualize.Traversal): #create wrapper for model encoder a
 		num_latents = sum([i.num_latents for i in self.model.latent_layers if not i is None])+self.model.num_latents
 		return num_latents
 
+	@property
+	def samples_list(self):
+		s = self.samples.shape
+		samples = self.samples.reshape(s[0],-1,np.sum(self.latent_hierarchy),*s[2:])
+		samples = np.split(samples, np.cumsum(self.latent_hierarchy)[:-1], axis=2)
+		self.inputs = np.broadcast_to(np.expand_dims(self.orig_inputs,1), samples[0].shape)
+		self.inputs = self.inputs.reshape(self.inputs.shape[0],-1, *self.inputs.shape[-3:])
+		samples = [i.reshape(i.shape[0],-1, *i.shape[-3:]) for i in samples]
+		samples = [self.inputs]+samples
+		return samples
 
 def vlae_traversal(model, inputs, min_value=-3, max_value=3, num_steps=30, is_visualizable=True, latent_of_focus=None, Traversal=VLAETraversal, return_traversal_object=False):
 	"""Standard raversal of the latent space
