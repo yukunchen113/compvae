@@ -62,7 +62,8 @@ class Config(metaclass=ConfigMetaClass):
 		self.batch_size = 32
 		self.approve_run = True
 		self.loss_func = ImageBCE()
-		self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.0005, beta_1=0.5)
+		self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+		#self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.0005, beta_1=0.5)
 		self.total_steps = 100000
 		self.model_save_steps = 1000
 		self.is_train = True

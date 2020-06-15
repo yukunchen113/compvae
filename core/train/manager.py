@@ -139,6 +139,7 @@ class TrainVAE(TrainObj):
 		if not timer_func is None: timer_func("taped gradients")
 	
 		if np.isnan(loss.numpy()):
+			print("Nan Loss on step %d"%step)
 			return np.nan
 
 		self.opt_man.run_optimizer(tape, loss)

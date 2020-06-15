@@ -1,28 +1,25 @@
+from utils.tf_custom.architectures import base
+from utils.tf_custom.architectures.encoders import GaussianEncoder
+from utils.tf_custom.architectures.decoders import Decoder
 from utils.tf_custom.architectures.variational_autoencoder import BetaTCVAE, BetaVAE 
 from utils.other_library_tools.disentanglementlib_tools import total_correlation 
 from utils.tf_custom.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
+from utilities.standard import is_weighted_layer, get_weighted_layers, split_latent_into_layer
+import utilities.vlae_method as vlm
 import numpy as np
 import tensorflow as tf
 import os
+import copy
 from functools import reduce
-def split_latent_into_layer(inputs, num_latents):
-	mean = inputs[:,:num_latents]
-	logvar = inputs[:,num_latents:]
-	sample = tf.exp(0.5*logvar)*tf.random.normal(
-		tf.shape(logvar))+mean
-	return sample, mean, logvar
 
 class LatentSpace(tf.keras.layers.Layer):
-	def __init__(self, shape, num_latents, activation=tf.keras.activations.linear, name="LatentSpace"):
+	def __init__(self, layer_params, shape, num_latents, activation=tf.keras.activations.linear, name="LatentSpace"):
 		super().__init__(name=name)
 		self.num_latents = num_latents
 		self.activation = activation
 
 		# build model
-		input_layer = tf.keras.Input(shape=shape)
-		flatten_layer = tf.keras.layers.Flatten()
-		dense_layer = tf.keras.layers.Dense(self.num_latents*2, activation=self.activation)
-		self.latent_layer = tf.keras.Sequential([input_layer, flatten_layer, dense_layer])
+		self.latent_layer = GaussianEncoder(layer_params, self.num_latents, shape, activations=None)
 
 		# future set:
 		self.decode_layer = None
@@ -41,17 +38,59 @@ class LatentSpace(tf.keras.layers.Layer):
 
 	def call(self, inputs):
 		# will create latent space block given inputs
-		out = self.latent_layer(inputs)
-		self.latent_space = split_latent_into_layer(out, self.num_latents)
+		self.latent_space = self.latent_layer(inputs)
 		return self.latent_space
 
-def is_weighted_layer(layer):
-	return bool(layer.weights)
+class ProVLAEGaussianEncoder64(GaussianEncoder):
+	def __init__(self, num_latents=10, activations=None, **kwargs):
+		"""This is a gaussian encoder that takes in 64x64x3 images
+		This is the architecture used in beta-VAE literature
+		
+		Args:
+			num_latents (int): the number of latent elements
+			shape_input (list): the shape of the input image (not including batch size)
+		"""
+		self.shape_input = [64,64,3]
+		self.layer_params = vlm.vlae_encoder_layer_params
+		if "num_channels" in kwargs:
+			self.shape_input[-1] = kwargs["num_channels"]
+		super().__init__(self.layer_params, num_latents, self.shape_input, activations, **kwargs)
 
-def get_weighted_layers(layers):
-	return [l for l in layers if is_weighted_layer(l)]
+class ProVLAEDecoder64(Decoder):
+	def __init__(self, num_latents=10, activations=None, **kwargs):
+		"""Decoder network for 64x64x3 images
+		
+		Args:
+		    activations (None, dict): This is a dictionary of specified actions
+		"""
+		self.shape_image = [64,64,3]
+		self.layer_params = vlm.vlae_decoder_layer_params
+		self.shape_before_flatten = vlm.vlae_shape_before_flatten
+		super().__init__(self.layer_params, 
+			num_latents=num_latents, 
+			shape_image=self.shape_image, 
+			activations=activations, 
+			shape_before_flatten=self.shape_before_flatten, **kwargs)
 
-class ProVLAE(BetaVAE):
+	def build_sequential(self): # do not build sequential so we can inject inputs
+		pass 
+
+def set_shape(layer, shape):
+	sequence = tf.keras.Sequential([
+		tf.keras.Input(shape), layer])
+	return sequence
+
+class ProVLAEBase(BetaVAE):
+	def create_default_encoder(self, **kwargs):
+		# default encoder decoder pair:
+		self.create_default_provlae_encoder(**kwargs)
+
+	def create_default_provlae_encoder(self, **kwargs):
+		self._encoder = ProVLAEGaussianEncoder64(**kwargs)
+		self._decoder = ProVLAEDecoder64(**kwargs)
+		self._setup()
+
+class ProVLAE(ProVLAEBase):
 	"""
 	Creation:
 		- create base VAE architecture,
@@ -74,6 +113,9 @@ class ProVLAE(BetaVAE):
 	def __init__(self, beta, latent_connections=None, gamma=0.5, name="ProVLAE", **kwargs):
 		self.latent_connections = latent_connections
 		self.gamma = gamma
+		self.ls_layer_params = vlm.vlae_latent_spaces if not "ls_layer_params" in kwargs else kwargs["ls_layer_params"]
+		assert len(latent_connections) == len(self.ls_layer_params), "the latent connections should be matched to the number of \
+			latent params len(latent_connections) = %d, len(self.ls_layer_params) = %d"%(len(latent_connections), len(self.ls_layer_params))
 		super().__init__(name=name, beta=beta, **kwargs)
 
 		self._alpha = None
@@ -86,10 +128,11 @@ class ProVLAE(BetaVAE):
 		self._check_valid_architecture()
 
 	def _check_valid_architecture(self):
-		for i,j in zip(self._encoder_layer_sizes, self._decoder_layer_sizes[::-1]):
-			if not tuple(i)==tuple(j):
-				string = "\n".join(["ENC:%s DEC:%s"%(i,j) for i,j in zip(self._encoder_layer_sizes,self._decoder_layer_sizes[::-1])])
-				raise Exception("Invalid ProVLAE architecture, output of layers must be reflected\n%s"%string)
+		#for i,j in zip(self._encoder_layer_sizes, self._decoder_layer_sizes[::-1]):
+		#	if not tuple(i)==tuple(j):
+		#		string = "\n".join(["ENC:%s DEC:%s"%(i,j) for i,j in zip(self._encoder_layer_sizes,self._decoder_layer_sizes[::-1])])
+		#		raise Exception("Invalid ProVLAE architecture, output of layers must be reflected\n%s"%string)
+		pass
 
 	def _setup_encoder(self):
 		#print("ENCODER:")
@@ -115,7 +158,9 @@ class ProVLAE(BetaVAE):
 			if i in lc:
 				#print("Connecting layer:", layer.name)
 				shape = layer.output_shape[1:]
-				self.latent_layers.append(LatentSpace(shape, self.num_latents, name="LatentSpace_%d"%(len(self.latent_layers))))
+				self.latent_layers.append(LatentSpace(
+					layer_params=self.ls_layer_params[len(self.latent_layers)], 
+					shape=shape, num_latents=self.num_latents, name="LatentSpace_%d"%(len(self.latent_layers))))
 			else:
 				self.latent_layers.append(None)
 
@@ -133,7 +178,6 @@ class ProVLAE(BetaVAE):
 					if not ls is None:
 						latent_space.append(ls(self.alpha[len(latent_space)]*layer_output))
 					valid_layer_num+=1
-
 			latent_space.append(split_latent_into_layer(self.alpha[len(latent_space)]*layer_output, self.num_latents)) # highest level latent
 			return latent_space
 
@@ -141,42 +185,45 @@ class ProVLAE(BetaVAE):
 
 	def _setup_decoder(self):
 		#print("\nDECODER:")
-		self._decoder_layer_sizes = []
+		self._decoder_layer_sizes = [(None, self._decoder.shape_input)]
 		layer_objects = self._decoder.layer_objects
 		layers = layer_objects.layers
-		weighted_layers = get_weighted_layers(layers)
 		modified_decoder_layers = []
-		for model_layer, latent_layer in zip(weighted_layers, self.latent_layers[::-1]):
+		for model_layer, latent_layer in zip(layers, self.latent_layers[::-1]):
 			# setup decoder latent space
-			self._decoder_layer_sizes.append(model_layer.output_shape[1:])
 			if not latent_layer is None:
-				shape = model_layer.input_shape[1:]
+				shape = self._decoder_layer_sizes[-1][1:]
 				latent_layer.set_decode(shape) # this will set original due to shallow copy
 		
 			# setup decoder input channels
+			#"""
+			input_shape = list(self._decoder_layer_sizes[-1])[1:]
+			layer_name = model_layer.name
 			if not latent_layer is None:
-				layer_name = os.path.dirname(model_layer.weights[0].name)
 				with tf.name_scope("modified_%s"%layer_name) as scope:
-					input_shape = list(model_layer.input_shape)
 					input_shape[-1] *=2
-					model_layer.build(input_shape) # this successfully modifies the input even through the layer.input_shape would still be unchanged
-		
+					set_shape(model_layer, input_shape) # this successfully modifies the input even through the layer.input_shape would still be unchanged
+			else:
+				with tf.name_scope("%s"%layer_name) as scope:
+					set_shape(model_layer, input_shape)
+			#"""
+			self._decoder_layer_sizes.append(model_layer.output_shape)
+
 		def call(latent_space):
 			dec_layers = self._decoder.layer_objects.layers
 			layer_output = latent_space[-1] # get samples from last layer
 			valid_layer_num = -1
 			alpha_num = -1
 			for layer in dec_layers:
-				if is_weighted_layer(layer): # check
-					ls = self.latent_layers[valid_layer_num]
-					if not ls is None:
-						samples = latent_space[alpha_num-1]
-						additional_recon = self.alpha[alpha_num]*ls.run_decode(samples)
-						layer_output = tf.concat((
-							additional_recon,
-							layer_output),-1)
-						alpha_num-=1
-					valid_layer_num-=1
+				ls = self.latent_layers[valid_layer_num]
+				if not ls is None:
+					samples = latent_space[alpha_num-1]
+					additional_recon = self.alpha[alpha_num]*ls.run_decode(samples)
+					layer_output = tf.concat((
+						additional_recon,
+						layer_output),-1)
+					alpha_num-=1
+				valid_layer_num-=1
 				layer_output = layer(layer_output)
 			reconstruction = layer_output
 			return reconstruction
@@ -202,32 +249,33 @@ class ProVLAE(BetaVAE):
 		self._alpha = alpha
 
 
-	def call(self, inputs, alpha=None):
+	def call(self, inputs, alpha=None, beta=None):
 		# alpha is list of size num latent_space
 		#called during each training step and inference
 		#TBD: run latent space and next layer in parallel
 		self.alpha = alpha
+		if beta is None:
+			beta = [self.beta]*len(self.alpha)
+
 
 		self.latent_space = self.encoder(inputs)
 		reconstruction = self.decoder([i[0] for i in self.latent_space])
 		# get reconstruction and regularization loss
-		for losses in self.provlae_regularizer(self.latent_space, self.alpha):
+		for losses in self.provlae_regularizer(self.latent_space, self.alpha, beta):
 			self.add_loss(losses)
 
 		return reconstruction
 
-	def provlae_regularizer(self, latent_space, alpha):
+	def provlae_regularizer(self, latent_space, alpha, beta):
 		#regularizer creation for each specified layer.
 		# use regularizations from parent vae
 		losses = []
 		for i,ls in enumerate(latent_space):
 			if alpha[i]:
-				losses.append(self.beta*self.regularizer(*ls))
+				losses.append(beta[i]*self.regularizer(*ls))
 			else:
 				losses.append(self.gamma*self.regularizer(*ls))
 		return losses
-
-
 
 class CondVAE(BetaTCVAE):
 	def __init__(self, beta, name="CondVAE", **kwargs):

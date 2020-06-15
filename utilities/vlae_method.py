@@ -16,18 +16,18 @@ vlae_encoder_layer_params = [
 vlae_decoder_layer_params = [
 	[1024],
 	[1024],
-	[[512,4,1,None], [256,4,2,None]],
-	[[128,4,2,None], [64,4,1,None]],
-	[64,4,2,None],
-	[3,4,2,None],
+	[[512,4,1], [256,4,2], None],
+	[[128,4,2], [64,4,1], None],
+	[64,4,2, None],
+	[3,4,2, None],
 	]
 
 vlae_shape_before_flatten = [4,4,512]
 
 vlae_latent_spaces = [
-	[[64,4,2],[64,4,1]],
-	[[128,4,2],[256,4,1]],
-	[[256,4,2],[512,4,1]],
+	[[64,4,2,None],[64,4,1,None]],
+	[[128,4,2,None],[256,4,1,None]],
+	[[256,4,2,None],[512,4,1,None]],
 	]
 
 

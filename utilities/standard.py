@@ -61,6 +61,10 @@ def import_given_path(name, path):
 	return mod
 
 
+######################
+# Architecture Utils #
+######################
+
 # reconstruction loss
 class ImageMSE(): # mean squared error
 	def __init__(self, loss_process=lambda x:x):
@@ -106,6 +110,19 @@ def kld_loss_reduction(kld_loss):
 	# per batch
 	kld_loss = tf.math.reduce_mean(kld_loss)
 	return kld_loss
+
+def is_weighted_layer(layer):
+	return bool(layer.weights)
+
+def get_weighted_layers(layers):
+	return [l for l in layers if is_weighted_layer(l)]
+
+def split_latent_into_layer(inputs, num_latents):
+	mean = inputs[:,:num_latents]
+	logvar = inputs[:,num_latents:]
+	sample = tf.exp(0.5*logvar)*tf.random.normal(
+		tf.shape(logvar))+mean
+	return sample, mean, logvar
 
 def image_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_visualizable=True, latent_of_focus=None, Traversal=ut.visualize.Traversal, return_traversal_object=False):
 	"""Standard raversal of the latent space

@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 from utilities.standard import ImageMSE
-from core.model.architectures import CondVAE, ProVLAE
+from core.model.architectures import CondVAE, ProVLAE, ProVLAEBase
 from core.train.manager import TrainProVLAE
 
 ###############
