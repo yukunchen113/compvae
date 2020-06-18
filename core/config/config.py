@@ -35,6 +35,7 @@ class Config(metaclass=ConfigMetaClass):
 		# save files
 		self.model_save_file = "model_weights.h5" # model weights save file
 		self.model_parameters_path = "model_parameters.txt"
+		self.train_status_path = "train_status.npz"
 
 	def _set_dataset(self):
 		self.dataset_manager, self.dataset = ut.dataset.get_celeba_data(
@@ -54,14 +55,15 @@ class Config(metaclass=ConfigMetaClass):
 		self.random_seed = None
 		self.num_latents = 10
 		self.num_channels = 3
-		self.beta_value = 30
+		self.beta = 30
 		self._get_model = ut.tf_custom.architectures.variational_autoencoder.BetaTCVAE
 		
 	def _set_training(self):
 		self.batch_size = 32
 		self.approve_run = True
 		self.loss_func = ImageBCE()
-		self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.0005, beta_1=0.5)
+		self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+		#self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.0005, beta_1=0.5)
 		self.total_steps = 100000
 		self.model_save_steps = 1000
 		self.is_train = True

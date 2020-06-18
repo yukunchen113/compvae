@@ -1,8 +1,39 @@
 import tensorflow as tf
 import numpy as np
 from utilities.standard import ImageMSE
-from core.model.architectures import CondVAE
+from core.model.architectures import CondVAE, ProVLAE, ProVLAEBase
+from core.train.manager import TrainProVLAE
 
+###############
+# VLAE Method #
+###############
+def make_vlae_compatible(config_obj):
+	config_obj._get_model = ProVLAE
+	
+
+	# model parameter setup
+	if not hasattr(config_obj, "gamma"): config_obj.gamma = 0.1
+	if not hasattr(config_obj, "latent_connections"): config_obj.latent_connections = [0,1,2]
+	
+
+	def hparam_schedule(step, a=5000, b=5000):
+		# use increasing weight hyper parameter
+		alpha = [0]*(len(config_obj.latent_connections)+1)
+		alpha[-1] = 1
+		for i in range(1,len(alpha)):
+			alpha[len(alpha)-i-1] = np.clip((step-b*i)/a, 0, 1) # after the first b steps, evolve alpha for a steps
+		return dict(alpha=alpha)
+	if not hasattr(config_obj, "hparam_schedule"): config_obj.hparam_schedule = hparam_schedule
+
+	# training object
+	config_obj.TrainVAE = TrainProVLAE
+
+	return config_obj
+
+
+########################
+# Comp and Mask Method #
+########################
 def make_mask_config(config_obj):
 	"""Converts a regular config to a mask config by adding functionality
 
@@ -13,10 +44,10 @@ def make_mask_config(config_obj):
 	"""
 	config_obj._get_model = CondVAE
 
-	def hparam_schedule(steps):
+	def hparam_schedule(step):
 		# use increasing weight hyper parameter
-		gamma = (steps-10000)/30000
-		return gamma
+		gamma = (step-10000)/30000
+		return dict(gamma=gamma)
 
 	config_obj.hparam_schedule = hparam_schedule
 	return config_obj

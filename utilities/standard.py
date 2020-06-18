@@ -27,6 +27,16 @@ class ConfigMetaClass(type):
 		"""
 		return type.__new__(cls, name, bases, body)
 
+class TrainObjMetaClass(type):
+	"""
+	metaclass to control Train objects.
+	Config must only have static methods.
+	This only need to be used by config_default, other configs
+	should inhereit from config_default
+	"""
+	def __new__(cls, name, bases, body):
+		assert "train_step" in body and callable(body["train_step"]), "TrainObj must have a method called train_step which is called to run one interation"				
+		return type.__new__(cls, name, bases, body)
 
 class GPUMemoryUsageMonitor:
 	def __init__(self):
@@ -50,6 +60,10 @@ def import_given_path(name, path):
 	spec.loader.exec_module(mod)
 	return mod
 
+
+######################
+# Architecture Utils #
+######################
 
 # reconstruction loss
 class ImageMSE(): # mean squared error
@@ -96,6 +110,19 @@ def kld_loss_reduction(kld_loss):
 	# per batch
 	kld_loss = tf.math.reduce_mean(kld_loss)
 	return kld_loss
+
+def is_weighted_layer(layer):
+	return bool(layer.weights)
+
+def get_weighted_layers(layers):
+	return [l for l in layers if is_weighted_layer(l)]
+
+def split_latent_into_layer(inputs, num_latents):
+	mean = inputs[:,:num_latents]
+	logvar = inputs[:,num_latents:]
+	sample = tf.exp(0.5*logvar)*tf.random.normal(
+		tf.shape(logvar))+mean
+	return sample, mean, logvar
 
 def image_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_visualizable=True, latent_of_focus=None, Traversal=ut.visualize.Traversal, return_traversal_object=False):
 	"""Standard raversal of the latent space

@@ -8,13 +8,36 @@ import utils as ut
 import numpy as np
 import time
 import shutil
-from utilities.standard import image_traversal, kld_loss_reduction, ImageMSE, GPUMemoryUsageMonitor
+from utilities.standard import image_traversal, kld_loss_reduction, ImageMSE, GPUMemoryUsageMonitor, TrainObjMetaClass
 from utilities.mask import mask_traversal
+from utilities.vlae_method import vlae_traversal
 from functools import reduce
 from .optimizer import OptimizerManager, CondOptimizerManager
 
+class TrainObj(metaclass=TrainObjMetaClass):
+	def __call__(self, model_save_steps, total_steps, measure_time=False):
+		"""Trains the model.
+		Steps to save the images across training and model are defined here, along with displaying curret loss and metrics 
 
-class TrainVAE():
+		Total training time: 100000 steps, TBD: if want wvalidation switch this. 
+		"""	
+		step = -1
+		if measure_time: 
+			timer_func = ut.general_tools.Timer()
+		else:
+			timer_func = None
+		while 1: # set this using validation
+			if np.isnan(step):
+				break
+			step = self.train_step(
+				step=step, model_save_steps=model_save_steps, 
+				total_steps=total_steps, timer_func=timer_func)
+	
+	def train_step(self, *args, **kwargs):
+		pass
+
+
+class TrainVAE(TrainObj):
 	def __init__(self, model, dataset, inputs_test, preprocessing, image_dir, model_setup_dir, optimizer, loss_func, model_save_file, approve_run=False, hparam_schedule=None, is_train=True):
 		"""Creates a training object for your model. See code for defaults.
 		
@@ -51,6 +74,9 @@ class TrainVAE():
 		self.reconstruction_loss = None
 		self.regularization_loss = None
 
+		# image visualize items
+		self.image_visualize = [1,5]
+
 	def make_new_save_dir(self, approve_run):
 		"""Creates a new save directory
 		
@@ -85,16 +111,12 @@ class TrainVAE():
 	def save_image(self, step):
 		t_im = mask_traversal(
 			self.model,
-			self.preprocess(inputs=self.inputs_test[1:3]),
+			self.preprocess(inputs=self.inputs_test[self.image_visualize]),
 			min_value=-3, 
 			max_value=3, 
 			num_steps=30, 
 			return_traversal_object=True)
 		t_im.save_gif(os.path.join(self.image_dir, "%d.gif"%step))
-		#plt.imshow(t_im)
-		#plt.savefig(
-		#	os.path.join(self.image_dir, "%d.svg"%step),
-		#	format="svg", dpi=700)
 
 	@staticmethod
 	def save_image_step(step):
@@ -103,54 +125,68 @@ class TrainVAE():
 	
 	@staticmethod
 	def print_step(step):
-		return step%100 == 0
+		return step%500 == 0
 
-	def __call__(self, model_save_steps, total_steps, measure_time=False):
-		"""Trains the model.
-		Steps to save the images across training and model are defined here, along with displaying curret loss and metrics 
+	def train_step(self, step, model_save_steps, total_steps, timer_func=None):
+		step+=1
+		inputs = self.preprocess(None, measure_time=not timer_func is None)
 
-		Total training time: 100000 steps, TBD: if want wvalidation switch this. 
-		"""	
-		step = -1
-		if measure_time: timer_func = ut.general_tools.Timer()
-		while 1: # set this using validation
-			step+=1
-			inputs = self.preprocess(None, measure_time=measure_time)
+		# apply gradient tape
+		hparams = {}
+		if not self.hparam_schedule is None:
+			hparams = self.hparam_schedule(step)
+		tape, loss = self.opt_man.tape_gradients(inputs, **hparams)
+		if not timer_func is None: timer_func("taped gradients")
+	
+		if np.isnan(loss.numpy()):
+			print("Nan Loss on step %d"%step)
+			return np.nan
 
-			# apply gradient tape
-			self.opt_man.tape_gradients(inputs)
-			if measure_time: timer_func("taped gradients")
-
-			self.opt_man.run_optimizer()
-			if measure_time: timer_func("applied gradients")
-
-			print("step %d\r"%step, end="")
-			if self.print_step(step):
-				print('training step %s:\t rec loss = %s\t, reg loss = %s\t' % (
-					step, 
-					self.opt_man.reconstruction_loss.numpy(),
-					self.opt_man.regularization_loss.numpy(),
-					))
-
-			if self.save_image_step(step):
-				self.save_image(step)
-				if measure_time: timer_func("saved figure")
-
-			if step%model_save_steps == 0:
-				self.save_model_weights()
-
-			if measure_time: timer_func("saved weights")
-
-			#TBD: this should be replaced with validation
-			if step>=total_steps:
-				break
-			if measure_time: print()
-			if measure_time and step>=5: exit()
+		self.opt_man.run_optimizer(tape, loss)
+		if not timer_func is None: timer_func("applied gradients")
 
 
+		print("step %d\r"%step, end="")
+		if self.print_step(step):
+			print('training step %s:\t rec loss = %s\t, reg loss = %s\t' % (
+				step, 
+				self.opt_man.reconstruction_loss.numpy(),
+				self.opt_man.regularization_loss.numpy(),
+				))
+
+		if self.save_image_step(step):
+			self.save_image(step)
+			if not timer_func is None: timer_func("saved figure")
+
+		if not step%model_save_steps:
+			self.save_model_weights()
+			if not timer_func is None: timer_func("saved weights")
+
+		if step>=total_steps:
+			return np.nan
+
+		if not timer_func is None: print()
+		if not timer_func is None and step>=5: exit()
+		return step
+
+class TrainProVLAE(TrainVAE):
+	#def save_image(self, step):
+	#	pass
+	def save_image(self, step):
+		t_im = vlae_traversal(
+			self.model,
+			self.preprocess(inputs=self.inputs_test[self.image_visualize]),
+			min_value=-3, 
+			max_value=3, 
+			num_steps=30, 
+			return_traversal_object=True)
+		t_im.save_gif(os.path.join(self.image_dir, "%d.gif"%step))
+
+	def train_step(self, *ar, **kw):
+		return super().train_step(*ar, **kw)
 
 
-class DualTrainer():
+class DualTrainer(TrainObj):
 	def __init__(self, mask_train_obj, cond_train_obj, dataset, inputs_test):
 		"""Creates a training object for your model. See code for defaults.
 		"""
@@ -163,77 +199,67 @@ class DualTrainer():
 				self.mtr_obj.opt_man.loss_func, self.mtr_obj.opt_man.optimizer, self.mtr_obj.opt_man.is_train)
 		self.ctr_obj = cond_train_obj
 
-
 	def save_image(self, step):
 		self.mtr_obj.save_image(step)
-		# TBD: put nstep as a wrapper to model functions
-		# image step doesn't reuse the model.
 		self.ctr_obj.save_image(step)
 
-	def __call__(self, model_save_steps, total_steps, measure_time=False):
-		"""Trains the model.
-		Steps to save the images across training and model are defined here, along with displaying curret loss and metrics 
+	def train_step(self, step, model_save_steps, total_steps, timer_func=None):
+		step+=1
+		if not timer_func is None: timer_func("Start")
+		# preprocess data
+		raw_data,_ = self.dataset()
+		if not timer_func is None: timer_func("got data")
 
-		TBD: currently only connects the comp encoder to mask reg. Should also connect 
-			comp preprocessing and losses here as well for speed boost
-		"""	
-		step = -1
-		if measure_time: timer_func = ut.general_tools.Timer()
-		while 1: # set this using validation
-			step+=1
-			gpu_monitor = GPUMemoryUsageMonitor()
-			# preprocess data
-			raw_data,_ = self.dataset()
+		mask_inputs = self.mtr_obj.preprocess(raw_data, measure_time=not timer_func is None)
+		if not timer_func is None: timer_func("preprocessed mask")
+		comp_inputs = self.ctr_obj.preprocess(raw_data, measure_time=not timer_func is None)
+		if not timer_func is None: timer_func("preprocessed comp")
 
-			mask_inputs = self.mtr_obj.preprocess(raw_data, measure_time=measure_time)
-			comp_inputs = self.ctr_obj.preprocess(raw_data, measure_time=measure_time)
+		# Tape gradients. Opt_man is used to handle models for loss and optimzation during training. 
+		comp_tape, comp_loss = self.ctr_obj.opt_man.tape_gradients(comp_inputs, timer_func=timer_func) # evaluate comp first
+		if not timer_func is None: timer_func("taped gradients: comp")
+		cond_samples, cond_logvar, cond_mean = self.ctr_obj.opt_man.latent_space
+		hparams = self.mtr_obj.hparam_schedule(step)
+		mask_tape, mask_loss = self.mtr_obj.opt_man.tape_gradients( # get mask gradient tape
+						inputs=mask_inputs, 
+						cond_logvar=cond_logvar, 
+						cond_mean=cond_mean,  
+						latent_to_condition=self.ctr_obj.mask_latent_of_focus
+						**hparams)
+		if not timer_func is None: timer_func("taped gradients: mask")
 
-			# Tape gradients. Opt_man is used to handle models for loss and optimzation during training. 
-			comp_tape, comp_loss = self.ctr_obj.opt_man.tape_gradients(comp_inputs) # evaluate comp first
-			cond_samples, cond_logvar, cond_mean = self.ctr_obj.opt_man.latent_space
+		# optimize models
+		self.mtr_obj.opt_man.run_optimizer(mask_tape, mask_loss)
+		self.ctr_obj.opt_man.run_optimizer(comp_tape, comp_loss)
+		if not timer_func is None: timer_func("applied gradients")
 
-			gamma = self.mtr_obj.hparam_schedule(step)
-			mask_tape, mask_loss = self.mtr_obj.opt_man.tape_gradients( # get mask gradient tape
-							inputs=mask_inputs, 
-							cond_logvar=cond_logvar, 
-							cond_mean=cond_mean, 
-							gamma=gamma, 
-							latent_to_condition=self.ctr_obj.mask_latent_of_focus)
-			if measure_time: timer_func("taped gradients")
+		if np.isnan(mask_loss.numpy()) or np.isnan(comp_loss.numpy()):
+			return np.nan
 
-			# optimize models
-			self.mtr_obj.opt_man.run_optimizer(mask_tape, mask_loss)
-			self.ctr_obj.opt_man.run_optimizer(comp_tape, comp_loss)
-			if measure_time: timer_func("applied gradients")
+		# print training log
+		print("step %d\r"%step, end="")
+		if self.mtr_obj.print_step(step):
+			print('training step %s:\t mask rec loss = %s\t, mask reg loss = %s\t, cond rec loss = %s\t, cond reg loss = %s\t' % (
+				step, 
+				self.mtr_obj.opt_man.reconstruction_loss.numpy(),
+				self.mtr_obj.opt_man.regularization_loss.numpy(),
+				self.ctr_obj.opt_man.reconstruction_loss.numpy(),
+				self.ctr_obj.opt_man.regularization_loss.numpy(),
+				))
+		# save testing image
+		if self.mtr_obj.save_image_step(step):
+			#self.save_image(step)
+			pass
 
-			if np.isnan(mask_loss.numpy()) or np.isnan(comp_loss.numpy()):
-				return
+		# save model weights
+		if not step%model_save_steps:
+			self.mtr_obj.save_model_weights()
+			self.ctr_obj.save_model_weights()
+		if not timer_func is None: timer_func("saved weights")
 
-			# print training log
-			print("step %d\r"%step, end="")
-			if self.mtr_obj.print_step(step):
-				print('training step %s:\t mask rec loss = %s\t, mask reg loss = %s\t, cond rec loss = %s\t, cond reg loss = %s\t' % (
-					step, 
-					self.mtr_obj.opt_man.reconstruction_loss.numpy(),
-					self.mtr_obj.opt_man.regularization_loss.numpy(),
-					self.ctr_obj.opt_man.reconstruction_loss.numpy(),
-					self.ctr_obj.opt_man.regularization_loss.numpy(),
-					))
-			# save testing image
-			if self.mtr_obj.save_image_step(step):
-				# TBD: put nstep as a wrapper to model functions
-				# image step doesn't reuse the model.
-				#self.save_image(step)
-				pass
-
-			# save model weights
-			if step%model_save_steps == 0:
-				self.mtr_obj.save_model_weights()
-				self.ctr_obj.save_model_weights()
-			if measure_time: timer_func("saved weights")
-
-			# end training
-			if step>=total_steps:
-				break
-			if measure_time: print()
-			if measure_time and step>=5: exit()
+		# end training
+		if step>=total_steps:
+			return np.nan
+		if not timer_func is None: print()
+		if not timer_func is None and step>=5: exit()
+		return step
