@@ -75,6 +75,39 @@ class ProVLAEDecoder64(Decoder):
 	def build_sequential(self): # do not build sequential so we can inject inputs
 		pass 
 
+	def create_conv2d_layers(self, layer_p, layer_num, conv2d_obj=tf.keras.layers.Conv2D):
+		layer_type = self.is_which_layer(layer_p, is_separate=False)
+		layer_p = [i for i in layer_p if not type(i)==str]
+		layer = super().create_conv2d_layers(layer_p=layer_p, layer_num=layer_num, conv2d_obj=conv2d_obj)
+		# identify new type of layer
+		if layer_type == 4:
+			layer = base.ConvBlock(*layer_p,
+								activation=self._apply_activation(layer_num),
+								conv2d_obj=conv2d_obj
+								)
+			# can add layer processing here, such as batch norm. needs to be output as one layer, so use tf.keras.Sequential()
+		return layer
+
+	@staticmethod
+	def is_which_layer(layer_param, is_separate=True):
+		num = base.ConvNetBase.is_which_layer(layer_param, is_separate)
+		if not num == 1:
+			if is_separate:
+				layer_param, _ = ProVLAEDecoder64.separate_upscale_or_pooling_parameter(layer_param)
+
+			# overwrite resnet
+			if "resnet" in layer_param and base.ResnetBlock.is_layers_valid([i for i in layer_param if not i=="resnet"]):
+				num = 3
+
+			# add conv block as default
+			if base.ConvBlock.is_layers_valid(layer_param):
+				num = 4
+
+		return num
+
+
+
+
 def set_shape(layer, shape):
 	sequence = tf.keras.Sequential([
 		tf.keras.Input(shape), layer])
