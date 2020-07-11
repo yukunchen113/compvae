@@ -65,18 +65,22 @@ class GifCreator:
 def main():
 	gcreate = GifCreator("test/gif_test_1", is_overwrite=True)
 	
-	base_path = "exp2"
+	base_path = "experiments"
 	paths = [os.path.dirname(i[0]) for i in os.walk(base_path) if "model_setup" in i[0]]
 	for path in paths:
+		#try:
 		modelhandler = ProVLAEModelHandler(path)
 		
 		# model description
 		desc_list = ["beta", "random_seed", "gamma", "num_latents", "latent_connections"]
 		desc_list = ["\n\t%s = %s"%(i, getattr(modelhandler.config, i)) for i in desc_list]
+		desc_list.append("\n\t%s = %s"%("experiment_path", path))
 		desc = "".join(desc_list)
 
 		# create gif
 		gcreate(modelhandler, desc=desc)
+		#except:
+		#	pass
 
 if __name__ == '__main__':
 	main()

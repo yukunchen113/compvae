@@ -7,29 +7,47 @@ from core.train.manager import TrainProVLAE
 ###############
 # VLAE Method #
 ###############
-def make_vlae_compatible(config_obj):
+def make_vlae_large(config_obj):
 	config_obj._get_model = ProVLAE
-	
-
+	ProVLAE.create_default_vae = ProVLAE.create_large_provlae64
 	# model parameter setup
 	if not hasattr(config_obj, "gamma"): config_obj.gamma = 0.1
 	if not hasattr(config_obj, "latent_connections"): config_obj.latent_connections = [0,1,2]
-	
+	def hparam_schedule(step, start_step=5000, alpha_duration=5000):
+		# start_step is where the a new latent space starts getting integrated
+		# alpha_duration is how long a new latent space takes for architecture to get integrated
+		# beta_duration is how long it takes for a beta value to drop to a certain value
 
-	def hparam_schedule(step, a=5000, b=5000):
-		# use increasing weight hyper parameter
+		# changes alpha
 		alpha = [0]*(len(config_obj.latent_connections)+1)
 		alpha[-1] = 1
 		for i in range(1,len(alpha)):
-			alpha[len(alpha)-i-1] = np.clip((step-b*i)/a, 0, 1) # after the first b steps, evolve alpha for a steps
+			alpha[len(alpha)-i-1] = np.clip((step-start_step*i)/alpha_duration, 0, 1) # after the first alpha_duration steps, evolve alpha for a steps
 		return dict(alpha=alpha)
 	if not hasattr(config_obj, "hparam_schedule"): config_obj.hparam_schedule = hparam_schedule
-
 	# training object
 	config_obj.TrainVAE = TrainProVLAE
-
 	return config_obj
 
+def make_vlae_small(config_obj):
+	config_obj._get_model = ProVLAE
+	# model parameter setup
+	if not hasattr(config_obj, "gamma"): config_obj.gamma = 0.5
+	if not hasattr(config_obj, "latent_connections"): config_obj.latent_connections = [0,1]
+	def hparam_schedule(step, start_step=5000, alpha_duration=5000):
+		# start_step is where the a new latent space starts getting integrated
+		# alpha_duration is how long a new latent space takes for architecture to get integrated
+		# beta_duration is how long it takes for a beta value to drop to a certain value
+		# changes alpha
+		alpha = [0]*(len(config_obj.latent_connections)+1)
+		alpha[-1] = 1
+		for i in range(1,len(alpha)):
+			alpha[len(alpha)-i-1] = np.clip((step-start_step*i)/alpha_duration, 0, 1) # after the first alpha_duration steps, evolve alpha for a steps
+		return dict(alpha=alpha)
+	if not hasattr(config_obj, "hparam_schedule"): config_obj.hparam_schedule = hparam_schedule
+	# training object
+	config_obj.TrainVAE = TrainProVLAE
+	return config_obj
 
 ########################
 # Comp and Mask Method #

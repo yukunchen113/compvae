@@ -1,126 +1,33 @@
-from utils.tf_custom.architectures import base
-from utils.tf_custom.architectures.encoders import GaussianEncoder
-from utils.tf_custom.architectures.decoders import Decoder
 from utils.tf_custom.architectures.variational_autoencoder import BetaTCVAE, BetaVAE 
 from utils.other_library_tools.disentanglementlib_tools import total_correlation 
 from utils.tf_custom.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
-from utilities.standard import is_weighted_layer, get_weighted_layers, split_latent_into_layer
+from utilities.standard import is_weighted_layer, get_weighted_layers, split_latent_into_layer, LatentSpace, set_shape
 import utilities.vlae_method as vlm
+from . import encoders_and_decoders as ead
 import numpy as np
 import tensorflow as tf
 import os
 import copy
 from functools import reduce
 
-class LatentSpace(tf.keras.layers.Layer):
-	def __init__(self, layer_params, shape, num_latents, activation=tf.keras.activations.linear, name="LatentSpace"):
-		super().__init__(name=name)
-		self.num_latents = num_latents
-		self.activation = activation
-
-		# build model
-		self.latent_layer = GaussianEncoder(layer_params, self.num_latents, shape, activations=None)
-
-		# future set:
-		self.decode_layer = None
-		self.latent_space = None
-
-	def set_decode(self, shape):
-		fshape = reduce(lambda x,y: x*y, shape)
-		input_layer = tf.keras.Input(self.num_latents)
-		dense_layer = tf.keras.layers.Dense(fshape, activation=self.activation)
-		reshape_layer = tf.keras.layers.Reshape(shape)
-		self.decode_layer = tf.keras.Sequential([input_layer, 
-				dense_layer, reshape_layer])
-
-	def run_decode(self, samples):
-		return self.decode_layer(samples)
-
-	def call(self, inputs):
-		# will create latent space block given inputs
-		self.latent_space = self.latent_layer(inputs)
-		return self.latent_space
-
-class ProVLAEGaussianEncoder64(GaussianEncoder):
-	def __init__(self, num_latents=10, activations=None, **kwargs):
-		"""This is a gaussian encoder that takes in 64x64x3 images
-		This is the architecture used in beta-VAE literature
-		
-		Args:
-			num_latents (int): the number of latent elements
-			shape_input (list): the shape of the input image (not including batch size)
-		"""
-		self.shape_input = [64,64,3]
-		self.layer_params = vlm.vlae_encoder_layer_params
-		if "num_channels" in kwargs:
-			self.shape_input[-1] = kwargs["num_channels"]
-		super().__init__(self.layer_params, num_latents, self.shape_input, activations, **kwargs)
-
-class ProVLAEDecoder64(Decoder):
-	def __init__(self, num_latents=10, activations=None, **kwargs):
-		"""Decoder network for 64x64x3 images
-		
-		Args:
-		    activations (None, dict): This is a dictionary of specified actions
-		"""
-		self.shape_image = [64,64,3]
-		self.layer_params = vlm.vlae_decoder_layer_params
-		self.shape_before_flatten = vlm.vlae_shape_before_flatten
-		super().__init__(self.layer_params, 
-			num_latents=num_latents, 
-			shape_image=self.shape_image, 
-			activations=activations, 
-			shape_before_flatten=self.shape_before_flatten, **kwargs)
-
-	def build_sequential(self): # do not build sequential so we can inject inputs
-		pass 
-
-	def create_conv2d_layers(self, layer_p, layer_num, conv2d_obj=tf.keras.layers.Conv2D):
-		layer_type = self.is_which_layer(layer_p, is_separate=False)
-		layer_p = [i for i in layer_p if not type(i)==str]
-		layer = super().create_conv2d_layers(layer_p=layer_p, layer_num=layer_num, conv2d_obj=conv2d_obj)
-		# identify new type of layer
-		if layer_type == 4:
-			layer = base.ConvBlock(*layer_p,
-								activation=self._apply_activation(layer_num),
-								conv2d_obj=conv2d_obj
-								)
-			# can add layer processing here, such as batch norm. needs to be output as one layer, so use tf.keras.Sequential()
-		return layer
-
-	@staticmethod
-	def is_which_layer(layer_param, is_separate=True):
-		num = base.ConvNetBase.is_which_layer(layer_param, is_separate)
-		if not num == 1:
-			if is_separate:
-				layer_param, _ = ProVLAEDecoder64.separate_upscale_or_pooling_parameter(layer_param)
-
-			# overwrite resnet
-			if "resnet" in layer_param and base.ResnetBlock.is_layers_valid([i for i in layer_param if not i=="resnet"]):
-				num = 3
-
-			# add conv block as default
-			if base.ConvBlock.is_layers_valid(layer_param):
-				num = 4
-
-		return num
-
-
-
-
-def set_shape(layer, shape):
-	sequence = tf.keras.Sequential([
-		tf.keras.Input(shape), layer])
-	return sequence
 
 class ProVLAEBase(BetaVAE):
-	def create_default_encoder(self, **kwargs):
+	def create_default_vae(self, **kwargs):
 		# default encoder decoder pair:
-		self.create_default_provlae_encoder(**kwargs)
+		self.create_small_provlae64(**kwargs)
 
-	def create_default_provlae_encoder(self, **kwargs):
-		self._encoder = ProVLAEGaussianEncoder64(**kwargs)
-		self._decoder = ProVLAEDecoder64(**kwargs)
+	def create_small_provlae64(self, **kwargs):
+		self._encoder = ead.ProVLAEGaussianEncoderSmall64(**kwargs)
+		self._decoder = ead.ProVLAEDecoderSmall64(**kwargs)
+		self.ls_layer_params = vlm.vlae_latent_spaces_small64
+		self.latent_connections = vlm.vlae_latent_connections_small64
+		self._setup()
+
+	def create_large_provlae64(self, **kwargs):
+		self._encoder = ead.ProVLAEGaussianEncoderLarge64(**kwargs)
+		self._decoder = ead.ProVLAEDecoderLarge64(**kwargs)
+		self.ls_layer_params = vlm.vlae_latent_spaces_large64
+		self.latent_connections = vlm.vlae_latent_connections_large64
 		self._setup()
 
 class ProVLAE(ProVLAEBase):
@@ -144,12 +51,12 @@ class ProVLAE(ProVLAEBase):
 		- specified layers only work with conv layers right now, not dense layers
 	"""
 	def __init__(self, beta, latent_connections=None, gamma=0.5, name="ProVLAE", **kwargs):
-		self.latent_connections = latent_connections
 		self.gamma = gamma
-		self.ls_layer_params = vlm.vlae_latent_spaces if not "ls_layer_params" in kwargs else kwargs["ls_layer_params"]
-		assert len(latent_connections) == len(self.ls_layer_params), "the latent connections should be matched to the number of \
-			latent params len(latent_connections) = %d, len(self.ls_layer_params) = %d"%(len(latent_connections), len(self.ls_layer_params))
 		super().__init__(name=name, beta=beta, **kwargs)
+		self.latent_connections = self.latent_connections if latent_connections is None else latent_connections
+		self.ls_layer_params = self.ls_layer_params if (not "ls_layer_params" in kwargs) or (kwargs["ls_layer_params"] is None) else kwargs["ls_layer_params"]
+		assert len(self.latent_connections) == len(self.ls_layer_params), "the latent connections should be matched to the number of \
+			latent params len(latent_connections) = %d, len(self.ls_layer_params) = %d"%(len(latent_connections), len(self.ls_layer_params))
 
 		self._alpha = None
 		self.latent_space = None
@@ -174,15 +81,13 @@ class ProVLAE(ProVLAEBase):
 		model_layers = get_weighted_layers(layer_objects.layers)
 
 		available_layers = len(model_layers)-2  # do not include last 2 layers, which is the last latent layer
+
 		if not self.latent_connections is None:
 			for i in self.latent_connections:
 				assert i < available_layers, "invalid specified layers. Must be any of the following %s"%(list(range(available_layers)))
 
 		# get latent connections:
-		if self.latent_connections is None:
-			lc = range(available_layers)
-		else:
-			lc = self.latent_connections
+		lc = self.latent_connections
 		
 		# get latent connections (layer creation)
 		self.latent_layers = []
@@ -252,6 +157,7 @@ class ProVLAE(ProVLAEBase):
 				if not ls is None:
 					samples = latent_space[alpha_num-1]
 					additional_recon = self.alpha[alpha_num]*ls.run_decode(samples)
+
 					layer_output = tf.concat((
 						additional_recon,
 						layer_output),-1)
@@ -304,11 +210,41 @@ class ProVLAE(ProVLAEBase):
 		# use regularizations from parent vae
 		losses = []
 		for i,ls in enumerate(latent_space):
-			if alpha[i]:
-				losses.append(beta[i]*self.regularizer(*ls))
+			
+			# select the prior to be a specific distribution
+			"""
+			if i == 1:
+				s, m, lv = latent_space[0]
+				ncl = 3 # conditioned subspace
+				lsn = 1 # latent number for conditioning
+				p1 = tf.zeros_like(m[:,ncl:])
+				p2 = tf.zeros_like(m[:,:ncl])
+				m = tf.concat((p1+tf.expand_dims(m[:, lsn],-1), p2), -1)
+				lv = tf.concat((p1+tf.expand_dims(lv[:, lsn],-1), p2), -1)
+				reg_loss = self.regularizer(*ls, m, lv)
 			else:
-				losses.append(self.gamma*self.regularizer(*ls))
+				reg_loss = self.regularizer(*ls)
+			"""
+			reg_loss = self.regularizer(*ls)
+
+			if alpha[i]:
+				reg_loss = beta[i]*reg_loss
+			else:
+				reg_loss = self.gamma*reg_loss
+
+			losses.append(reg_loss)
 		return losses
+
+	def regularizer(self, sample, mean, logvar, cond_mean=None, cond_logvar=None):
+		# regularization uses disentanglementlib method
+
+		assert not (cond_mean is None != cond_logvar is None), "mean and logvar must both be sepecified if one is specified"
+		if cond_mean is None:
+			cond_mean = tf.zeros_like(mean)
+			cond_logvar = tf.zeros_like(logvar)
+		kl_loss = self.beta*kl_divergence_between_gaussians(mean, logvar, cond_mean, cond_logvar)
+		kl_loss = tf.reduce_sum(kl_loss,1)
+		return kl_loss
 
 class CondVAE(BetaTCVAE):
 	def __init__(self, beta, name="CondVAE", **kwargs):

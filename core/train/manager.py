@@ -103,7 +103,7 @@ class TrainVAE(TrainObj):
 
 	def preprocess(self, inputs=None, **kwargs):
 		if inputs is None: inputs, _ = self.dataset()
-		return self._preprocessing(inputs)
+		return self._preprocessing(inputs=inputs)
 
 	def save_model_weights(self):
 		self.model.save_weights(self.model_save_file)
@@ -127,10 +127,9 @@ class TrainVAE(TrainObj):
 	def print_step(step):
 		return step%500 == 0
 
-	def train_step(self, step, model_save_steps, total_steps, timer_func=None):
+	def train_step(self, step, model_save_steps, total_steps, custom_inputs=None, timer_func=None):
 		step+=1
-		inputs = self.preprocess(None, measure_time=not timer_func is None)
-
+		inputs = self.preprocess(custom_inputs, measure_time=not timer_func is None)
 		# apply gradient tape
 		hparams = {}
 		if not self.hparam_schedule is None:
@@ -138,15 +137,19 @@ class TrainVAE(TrainObj):
 		tape, loss = self.opt_man.tape_gradients(inputs, **hparams)
 		if not timer_func is None: timer_func("taped gradients")
 	
+		
+
 		if np.isnan(loss.numpy()):
 			print("Nan Loss on step %d"%step)
 			return np.nan
+
+		
 
 		self.opt_man.run_optimizer(tape, loss)
 		if not timer_func is None: timer_func("applied gradients")
 
 
-		print("step %d\r"%step, end="")
+		print("step", step, "\r", end="")
 		if self.print_step(step):
 			print('training step %s:\t rec loss = %s\t, reg loss = %s\t' % (
 				step, 

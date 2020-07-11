@@ -93,7 +93,7 @@ class ModelHandler:
 		config = self.config
 
 		# training
-		dataset = ut.dataset.DatasetBatch(config.dataset, config.batch_size).get_next 
+		dataset = config.dataset_manager.batch(config.batch_size)
 
 		# define parameters
 		self.training_object = config.TrainVAE(
@@ -111,7 +111,7 @@ class ModelHandler:
 			**kwargs
 			)
 		return self.training_object
-
+		
 	def train(self):
 		config = self.config
 		train_status_path = os.path.join(self.base_path, config.train_status_path) # model parameters path
@@ -126,16 +126,19 @@ class ModelHandler:
 			step = train_status["step"]
 		else:		
 			step = -1 # the previous step.
-		while 1: # set this using validation
+
+		for data in config.dataset_manager.batch(config.batch_size):
 			if np.isnan(step):
 				break
 			step = self.training_object.train_step(
 				step=step, model_save_steps=config.model_save_steps, 
-				total_steps=config.total_steps)
+				total_steps=config.total_steps,
+				custom_inputs=data[0])
 			if np.isnan(step) or not (step%config.model_save_steps): 
 				np.savez(train_status_path, step=step)
 
 		print("finished beta %d"%config.beta)
+
 
 	def train_stats(self):
 		self._configure_train()
@@ -197,7 +200,7 @@ class ModelHandler:
 class ProVLAEModelHandler(ModelHandler):
 	def __init__(self, *args, config_processing=None, **kwargs):
 		if config_processing is None:
-			config_processing = cfg.addition.make_vlae_compatible
+			config_processing = cfg.addition.make_vlae_large
 		super().__init__(*args, config_processing=config_processing, **kwargs)
 
 	def create_model(self, load_prev=True):

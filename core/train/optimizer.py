@@ -42,6 +42,7 @@ class OptimizerManager():
 
 		self.reconstruction_loss = reconstruction_loss
 		self.regularization_loss = regularization_loss
+		self.reconstruct = reconstruct
 		return tape, loss
 
 	def run_optimizer(self, tape, loss):

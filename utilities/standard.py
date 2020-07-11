@@ -2,7 +2,7 @@ import utils as ut
 import tensorflow as tf 
 import numpy as np 
 import importlib.util
-
+from functools import reduce
 ###########################
 # Config and Setup  Utils #
 ###########################
@@ -61,9 +61,9 @@ def import_given_path(name, path):
 	return mod
 
 
-######################
-# Architecture Utils #
-######################
+#######################
+# Training/Loss Utils #
+#######################
 
 # reconstruction loss
 class ImageMSE(): # mean squared error
@@ -89,11 +89,14 @@ class ImageBCE(): # binary cross entropy
 	def __init__(self, loss_process=lambda x:x):
 		self.loss_process = loss_process
 
-	def __call__(self, actu, pred):
+	def __call__(self, actu, pred, label_smooting_pad=1e-5):
 		reduction_axis = range(1,len(actu.shape))
 
+		# apply label smooting
+		actu = actu*(1-2*label_smooting_pad)+label_smooting_pad
+		pred = pred*(1-2*label_smooting_pad)+label_smooting_pad
+
 		# per point
-		sbf = actu.shape
 		loss = actu*(-tf.math.log(pred))+(1-actu)*(-tf.math.log(1-pred))
 
 		# apply processing to first 3 channels
@@ -111,6 +114,10 @@ def kld_loss_reduction(kld_loss):
 	kld_loss = tf.math.reduce_mean(kld_loss)
 	return kld_loss
 
+
+######################
+# Architecture Utils #
+######################
 def is_weighted_layer(layer):
 	return bool(layer.weights)
 
@@ -124,6 +131,56 @@ def split_latent_into_layer(inputs, num_latents):
 		tf.shape(logvar))+mean
 	return sample, mean, logvar
 
+class LatentSpace(tf.keras.layers.Layer):
+
+	"""Creates a latent space.
+	
+	Attributes:
+	    activation (TYPE): Description
+	    decode_layer (TYPE): Description
+	    latent_layer (TYPE): Description
+	    latent_space (TYPE): Description
+	    num_latents (TYPE): Description
+	"""
+	
+	def __init__(self, layer_params, shape, num_latents, activation=tf.keras.activations.linear, name="LatentSpace"):
+		super().__init__(name=name)
+		self.num_latents = num_latents
+		self.activation = activation
+
+		# build model
+		self.latent_layer = ut.tf_custom.architectures.encoders.GaussianEncoder(layer_params, self.num_latents, shape, activations=None)
+
+		# future set:
+		self.decode_layer = None
+		self.latent_space = None
+
+	def set_decode(self, shape):
+		fshape = reduce(lambda x,y: x*y, shape)
+		input_layer = tf.keras.Input(self.num_latents)
+		dense_layer = tf.keras.layers.Dense(fshape, activation=self.activation)
+		reshape_layer = tf.keras.layers.Reshape(shape)
+		self.decode_layer = tf.keras.Sequential([input_layer, 
+				dense_layer, reshape_layer])
+
+	def run_decode(self, samples):
+		return self.decode_layer(samples)
+
+	def call(self, inputs):
+		# will create latent space block given inputs
+		self.latent_space = self.latent_layer(inputs)
+		return self.latent_space
+
+def set_shape(layer, shape):
+	sequence = tf.keras.Sequential([
+		tf.keras.Input(shape), layer])
+	return sequence
+
+
+
+#######################
+# Visualization Utils #
+#######################
 def image_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_visualizable=True, latent_of_focus=None, Traversal=ut.visualize.Traversal, return_traversal_object=False):
 	"""Standard raversal of the latent space
 	
