@@ -76,8 +76,7 @@ class ModelHandler:
 		tf.random.set_seed(config.random_seed)
 		self.model = config.get_model(
 			beta=config.beta, 
-			num_latents=config.num_latents, 
-			num_channels=config.num_channels)
+			num_latents=config.num_latents)
 		
 		#self.model.save_weights(self.model_save_file)
 
@@ -210,8 +209,7 @@ class ProVLAEModelHandler(ModelHandler):
 			beta=config.beta,
 			latent_connections = config.latent_connections,
 			gamma = config.gamma,
-			num_latents=config.num_latents, 
-			num_channels=config.num_channels)
+			num_latents=config.num_latents)
 
 		if load_prev and os.path.exists(self.model_save_file):
 			print("found existing model weights. Loading...")

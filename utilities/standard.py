@@ -176,8 +176,6 @@ def set_shape(layer, shape):
 		tf.keras.Input(shape), layer])
 	return sequence
 
-
-
 #######################
 # Visualization Utils #
 #######################

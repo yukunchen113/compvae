@@ -85,6 +85,7 @@ def make_comp_config(config_obj, mask_obj, randomize_mask_step=False):
 
 	config_obj.mask_obj = mask_obj
 
+	assert False, "no variable channel support, need to reconfigure this. TODO"
 	config_obj.num_channels = 6
 
 	def loss_process(loss): # apply preprocess to loss

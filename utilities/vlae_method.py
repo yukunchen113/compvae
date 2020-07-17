@@ -2,55 +2,6 @@ import utils as ut
 import tensorflow as tf 
 import numpy as np 
 import importlib.util
-
-
-vlae_encoder_layer_params_large64 = [
-	[64,4,2,None],
-	[128,4,2,None],
-	[256,4,2,None],
-	[512,4,2,None],
-	[1024],
-	[1024],
-	]
-vlae_decoder_layer_params_large64 = [
-	[1024],
-	[1024],
-	[[512,4,1], [256,4,2], None],
-	[[128,4,2], [64,4,1], None],
-	[64,4,2, None],
-	[3,4,2, None],
-	]
-vlae_shape_before_flatten_large64 = [4,4,512]
-vlae_latent_spaces_large64 = [
-	[[64,4,2,None],[64,4,1,None]],
-	[[128,4,2,None],[256,4,1,None]],
-	[[256,4,2,None],[512,4,1,None]],
-	]
-vlae_latent_connections_small64 = [0,1]
-
-vlae_encoder_layer_params_small64 = [
-	[32,4,2,None],
-	[32,4,2,None],
-	[32,4,2,None],
-	[32,4,2,None],
-	[256],
-	]
-vlae_decoder_layer_params_small64 =[
-	[256],
-	[32,4,2,None],
-	[32,4,2,None],
-	[32,4,2,None],
-	[3,4,2, None],
-	]
-vlae_shape_before_flatten_small64 = [4,4,32]
-vlae_latent_spaces_small64 = [
-	[[32,4,2,None],[256]],
-	[[32,4,2,None],[256]],
-	]
-vlae_latent_connections_large64 = [0,1,2]
-
-
-
 #################
 # Visualization #
 #################

@@ -56,7 +56,6 @@ class Config(metaclass=ConfigMetaClass):
 	def _set_model(self):
 		self.random_seed = None
 		self.num_latents = 10
-		self.num_channels = 3
 		self.beta = 30
 		self._get_model = ut.tf_custom.architectures.variational_autoencoder.BetaTCVAE
 		
