@@ -1,7 +1,6 @@
 from utils.tf_custom.architectures import base
 from utils.tf_custom.architectures.encoders import GaussianEncoder
 from utils.tf_custom.architectures.decoders import Decoder
-import utilities.vlae_method as vlm
 from . import architecture_params as ap
 from utilities.standard import BatchNormOptionWrapper 
 import tensorflow as tf

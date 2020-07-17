@@ -2,7 +2,7 @@ from utils.tf_custom.architectures.variational_autoencoder import BetaTCVAE, Bet
 from utils.other_library_tools.disentanglementlib_tools import total_correlation 
 from utils.tf_custom.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
 from utilities.standard import is_weighted_layer, get_weighted_layers, split_latent_into_layer, LatentSpace, set_shape
-import utilities.vlae_method as vlm
+from . import architecture_params as ap
 from . import encoders_and_decoders as ead
 import numpy as np
 import tensorflow as tf
@@ -19,15 +19,15 @@ class ProVLAEBase(BetaVAE):
 	def create_small_provlae64(self, **kwargs):
 		self._encoder = ead.ProVLAEGaussianEncoderSmall64(**kwargs)
 		self._decoder = ead.ProVLAEDecoderSmall64(**kwargs)
-		self.ls_layer_params = vlm.vlae_latent_spaces_small64
-		self.latent_connections = vlm.vlae_latent_connections_small64
+		self.ls_layer_params = ap.vlae_latent_spaces_small64
+		self.latent_connections = ap.vlae_latent_connections_small64
 		self._setup()
 
 	def create_large_provlae64(self, **kwargs):
 		self._encoder = ead.ProVLAEGaussianEncoderLarge64(**kwargs)
 		self._decoder = ead.ProVLAEDecoderLarge64(**kwargs)
-		self.ls_layer_params = vlm.vlae_latent_spaces_large64
-		self.latent_connections = vlm.vlae_latent_connections_large64
+		self.ls_layer_params = ap.vlae_latent_spaces_large64
+		self.latent_connections = ap.vlae_latent_connections_large64
 		self._setup()
 
 class ProVLAE(ProVLAEBase):
