@@ -1,7 +1,8 @@
-from utils.tf_custom.architectures.variational_autoencoder import BetaTCVAE, BetaVAE 
+import utils as ut
+from utils.tf_custom.architectures.vae import BetaTCVAE, BetaVAE, VariationalAutoencoder
 from utils.other_library_tools.disentanglementlib_tools import total_correlation 
 from utils.tf_custom.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
-from utilities.standard import is_weighted_layer, get_weighted_layers, split_latent_into_layer, LatentSpace, set_shape
+from utilities.standard import split_latent_into_layer, set_shape
 from . import architecture_params as ap
 from . import encoders_and_decoders as ead
 import numpy as np
@@ -9,6 +10,37 @@ import tensorflow as tf
 import os
 import copy
 from functools import reduce
+
+def is_weighted_layer(layer):
+	return bool(layer.weights)
+
+def check_weighted_layers(layers):
+	for l in layers:
+		assert is_weighted_layer(l), "each layer must contain weights. For example, tf.keras.layers.Dense. layer name: %s. %s"%(
+			l.name)
+
+class LatentSpace(VariationalAutoencoder):
+	def __init__(self, name="LatentSpace"):
+		super().__init__(name=name)
+
+	def create_default_vae(self, **kwargs):
+		# no default vae.
+		self._encoder = None
+		self._decoder = None
+
+	def set_encoder(self, *ar, **kw):
+		# build model
+		assert self._encoder is None, "Encoder is already defined for %s"%(self.name)
+		self._encoder = ead.ProVLAEGaussianEncoder(*ar, **kw)
+
+	def set_decoder(self, *ar, **kw):
+		assert self._decoder is None, "Decoder is already defined for %s"%(self.name)
+		self._decoder = ead.ProVLAEDecoder(*ar, **kw)
+	
+	def call(self, *ar, **kw):
+		assert not (self.decoder is None or self.encoder is None), "Decoder or encoder is not defined"
+		return super().call(*ar, **kw)
+
 
 
 class ProVLAEBase(BetaVAE):
@@ -19,19 +51,32 @@ class ProVLAEBase(BetaVAE):
 	def create_small_provlae64(self, **kwargs):
 		self._encoder = ead.ProVLAEGaussianEncoderSmall64(**kwargs)
 		self._decoder = ead.ProVLAEDecoderSmall64(**kwargs)
-		self.ls_layer_params = ap.vlae_latent_spaces_small64
 		self.latent_connections = ap.vlae_latent_connections_small64
+		self.ladder_params = ap.vlae_latent_spaces_small64
 		self._setup()
 
 	def create_large_provlae64(self, **kwargs):
 		self._encoder = ead.ProVLAEGaussianEncoderLarge64(**kwargs)
 		self._decoder = ead.ProVLAEDecoderLarge64(**kwargs)
-		self.ls_layer_params = ap.vlae_latent_spaces_large64
 		self.latent_connections = ap.vlae_latent_connections_large64
+		self.ladder_params = ap.vlae_latent_spaces_large64
 		self._setup()
+
+	@property
+	def ladder_params(self):
+		assert len(self.latent_connections) == len(self._ladder_params), ("the latent connections should be matched to the number of"+
+			"latent params len(latent_connections) = %d, len(self.ladder_params) = %d"%(len(self.latent_connections), len(self._ladder_params)))
+		return self._ladder_params
+	@ladder_params.setter
+	def ladder_params(self, params):
+		assert len(self.latent_connections) == len(params), ("the latent connections should be matched to the number of"+
+			"latent params len(latent_connections) = %d, len(self.ladder_params) = %d"%(len(self.latent_connections), len(params)))
+		self._ladder_params = params
 
 class ProVLAE(ProVLAEBase):
 	"""
+	This is used to configure the architecture based on the connections parameters (parameters that are not base encoder decoder specific)
+	
 	Creation:
 		- create base VAE architecture,
 		- create latent bridge between encoder and decoder given layer selection
@@ -54,10 +99,8 @@ class ProVLAE(ProVLAEBase):
 		self.gamma = gamma
 		super().__init__(name=name, beta=beta, **kwargs)
 		self.latent_connections = self.latent_connections if latent_connections is None else latent_connections
-		self.ls_layer_params = self.ls_layer_params if (not "ls_layer_params" in kwargs) or (kwargs["ls_layer_params"] is None) else kwargs["ls_layer_params"]
-		assert len(self.latent_connections) == len(self.ls_layer_params), "the latent connections should be matched to the number of \
-			latent params len(latent_connections) = %d, len(self.ls_layer_params) = %d"%(len(latent_connections), len(self.ls_layer_params))
-
+		self.ladder_params = self.ladder_params if (not "ladder_params" in kwargs) or (kwargs["ladder_params"] is None) else kwargs["ladder_params"]
+		
 		self._alpha = None
 		self.latent_space = None
 
@@ -65,112 +108,117 @@ class ProVLAE(ProVLAEBase):
 		# redefine encoder and decoder
 		self._setup_encoder()
 		self._setup_decoder()
-		self._check_valid_architecture()
-
-	def _check_valid_architecture(self):
-		#for i,j in zip(self._encoder_layer_sizes, self._decoder_layer_sizes[::-1]):
-		#	if not tuple(i)==tuple(j):
-		#		string = "\n".join(["ENC:%s DEC:%s"%(i,j) for i,j in zip(self._encoder_layer_sizes,self._decoder_layer_sizes[::-1])])
-		#		raise Exception("Invalid ProVLAE architecture, output of layers must be reflected\n%s"%string)
-		pass
 
 	def _setup_encoder(self):
-		#print("ENCODER:")
-		self._encoder_layer_sizes = [tuple(self._encoder.shape_input)]
-		layer_objects = self._encoder.layer_objects
-		model_layers = get_weighted_layers(layer_objects.layers)
+		"""
+		- Creates the latent space objects
+			- basic check on latent_connections
+		- Replaces encoder call to include 
+			- all latent space outputs as a list
+			- fade in wrt alpha
+		"""
+		# perform some checks
+		layers = self.encoder.layers.layers # the first layers is the sequential layers.
+		check_weighted_layers(layers)
+		assert not self.latent_connections is None, "must specify latent layers"
+		for lc_enc, _ in self.latent_connections:
+			assert lc_enc in range(-len(layers), len(layers)), "encoder latent connection specifications is invalid. latent connections %s and num layers is %d"%(lc, len(layers)) 
 
-		available_layers = len(model_layers)-2  # do not include last 2 layers, which is the last latent layer
-
-		if not self.latent_connections is None:
-			for i in self.latent_connections:
-				assert i < available_layers, "invalid specified layers. Must be any of the following %s"%(list(range(available_layers)))
-
-		# get latent connections:
-		lc = self.latent_connections
-		
-		# get latent connections (layer creation)
-		self.latent_layers = []
-		for i,layer in enumerate(model_layers):
-			self._encoder_layer_sizes.append(layer.output_shape[1:])
-			if i in lc:
-				#print("Connecting layer:", layer.name)
-				shape = layer.output_shape[1:]
-				self.latent_layers.append(LatentSpace(
-					layer_params=self.ls_layer_params[len(self.latent_layers)], 
-					shape=shape, num_latents=self.num_latents, name="LatentSpace_%d"%(len(self.latent_layers))))
-			else:
-				self.latent_layers.append(None)
-
+		# create the latent layers
+		self.ladders = [] 
+		latent_connections = {lc[0]:i for i,lc in enumerate(self.latent_connections)}
+		for i,layer in enumerate(layers):
+			if (i in latent_connections) or (i-len(layers) in latent_connections):
+				if i-len(layers) in latent_connections: i = i-len(layers)
+				# create new latent space
+				ladder = LatentSpace(name="LatentSpace_%d"%latent_connections[i])
+				ladder.set_encoder(
+					layer_param=self.ladder_params[latent_connections[i]][0], 
+					num_latents=self.num_latents, 
+					shape_input=layer.output_shape[1:], 
+					activation=None
+					)
+				self.ladders.append(ladder)
 
 		# set call
 		def call(inputs):
 			latent_space = []
-			enc_layers = self._encoder.layer_objects.layers
-			valid_layer_num = 0
-			layer_output = inputs
-			for layer in enc_layers:
-				layer_output = layer(layer_output)
-				if is_weighted_layer(layer): # this if will not be triggered for last two layers (latent layer and layer leading up to it)
-					ls = self.latent_layers[valid_layer_num]
-					if not ls is None:
-						latent_space.append(ls(self.alpha[len(latent_space)]*layer_output))
-					valid_layer_num+=1
-			latent_space.append(split_latent_into_layer(self.alpha[len(latent_space)]*layer_output, self.num_latents)) # highest level latent
+			pred = inputs
+			# run the intermediary ladders 
+			for i,layer in enumerate(layers[:-1]): # run the last layer, which is the latent layer, outside of the for loop 
+				pred = layer(pred)
+				if (i in latent_connections) or (i-len(layers) in latent_connections): # intermediate latent layers 
+					if i-len(layers) in latent_connections: i = i-len(layers) 
+					ladder_num = latent_connections[i]
+					latent_space.append(self.ladders[ladder_num].encoder(pred*self.alpha[ladder_num]))
+
+			# run the last latent layer TODO: change encoder decoder architecture to include final layer as a part of latent space
+			latent_space.append(self.encoder.convert_layer_to_latent_space(layers[-1](pred*self.alpha[-1])))
 			return latent_space
 
 		self._encoder.call = call
 
 	def _setup_decoder(self):
-		#print("\nDECODER:")
-		self._decoder_layer_sizes = [(None, self._decoder.shape_input)]
-		layer_objects = self._decoder.layer_objects
-		layers = layer_objects.layers
-		modified_decoder_layers = []
-		for model_layer, latent_layer in zip(layers, self.latent_layers[::-1]):
-			# setup decoder latent space
-			if not latent_layer is None:
-				shape = self._decoder_layer_sizes[-1][1:]
-				latent_layer.set_decode(shape) # this will set original due to shallow copy
-		
-			# setup decoder input channels
-			#"""
-			input_shape = list(self._decoder_layer_sizes[-1])[1:]
-			layer_name = model_layer.name
-			if not latent_layer is None:
-				with tf.name_scope("modified_%s"%layer_name) as scope:
-					input_shape[-1] *=2
-					set_shape(model_layer, input_shape) # this successfully modifies the input even through the layer.input_shape would still be unchanged
+		"""
+		- Sets up latent layer decoder.
+			- allow function layer_param (passes shape as arg) or list layer_param
+		- Sets up each decoder layer inputs
+		- sets up call by
+			- applying fade in and concatenates
+			- returns final reconstruction
+		"""
+		# perform some checks
+		layers = self.decoder.layers # decoder did not convert sequential, so we use layers instead of layers.layers
+		assert not self.latent_connections is None, "must specify latent layers"
+		for _, lc_dec in self.latent_connections:
+			assert lc_dec in range(-len(layers), len(layers)), "decoder latent connection specifications is invalid. latent connections %s and num layers is %d"%(lc, len(layers)) 
+
+		latent_connections = {lc[1]:i for i,lc in enumerate(self.latent_connections)}
+		shape_input = list(self.decoder.shape_input) 
+		for i,layer in enumerate(layers): # this is for the intermediate ladders
+			if (i in latent_connections) or (i-len(layers) in latent_connections):
+				if i-len(layers) in latent_connections: i = i-len(layers)
+				# set ladder decoder 
+				ladder_param = self.ladder_params[latent_connections[i]][1]
+				if callable(ladder_param):
+					ladder_param = ladder_param(shape_input)
+				self.ladders[latent_connections[i]].set_decoder(
+					layer_param=ladder_param, 
+					num_latents=self.num_latents, 
+					shape_image=shape_input, 
+					activation=None
+					)
+
+				# increase decoder input channels
+				with tf.name_scope("modified_%s"%layer.name) as scope:
+					modified_decoder_shape = [*shape_input]
+					modified_decoder_shape[-1] *=2
+					set_shape(layer, modified_decoder_shape)
+
 			else:
-				with tf.name_scope("%s"%layer_name) as scope:
-					set_shape(model_layer, input_shape)
-			#"""
-			self._decoder_layer_sizes.append(model_layer.output_shape)
+				with tf.name_scope("%s"%layer.name) as scope:
+					set_shape(layer, shape_input)
+			shape_input = list(layer.output_shape[1:])
 
-		def call(latent_space):
-			dec_layers = self._decoder.layer_objects.layers
-			layer_output = latent_space[-1] # get samples from last layer
-			valid_layer_num = -1
-			alpha_num = -1
-			for layer in dec_layers:
-				ls = self.latent_layers[valid_layer_num]
-				if not ls is None:
-					samples = latent_space[alpha_num-1]
-					additional_recon = self.alpha[alpha_num]*ls.run_decode(samples)
-
-					layer_output = tf.concat((
-						additional_recon,
-						layer_output),-1)
-					alpha_num-=1
-				valid_layer_num-=1
-				layer_output = layer(layer_output)
-			reconstruction = layer_output
-			return reconstruction
+		def call(latent_space_samples):
+			pred = latent_space_samples[-1] # get samples from last layer
+			for i,layer in enumerate(layers):
+				# concatenate latent space
+				if (i in latent_connections) or (i-len(layers) in latent_connections):
+					if i-len(layers) in latent_connections: idx = i-len(layers)
+					ladder_idx = latent_connections[idx]
+					ladder_recon = self.alpha[ladder_idx]*self.ladders[ladder_idx].decoder(latent_space_samples[ladder_idx])
+					pred = tf.concat((pred, ladder_recon),-1)
+				pred = layer(pred)
+				if not i:
+					pred = self.alpha[-1]*pred
+			return pred
 		self._decoder.call = call
 
 	def get_config(self):
 		config_param = {
 			**super().get_config(),
+			"ladder_param":str(self.ladder_params),
 			"latent_connections":str(self.latent_connections),
 			"gamma":str(self.gamma)}
 		return config_param
@@ -181,12 +229,12 @@ class ProVLAE(ProVLAEBase):
 	@property
 	def alpha(self):
 		if self._alpha is None:
-			self._alpha = [1]*len(self._encoder.layer_objects.layers) # latent_space size is unknown, so use all possible as worst case
+			self._alpha = [1]*(len(self.latent_connections)+1) # latent_space size is unknown, so use all possible as worst case
 		return self._alpha
 	@alpha.setter
 	def alpha(self, alpha=None):
+		assert len(alpha) == (len(self.latent_connections)+1)
 		self._alpha = alpha
-
 
 	def call(self, inputs, alpha=None, beta=None):
 		# alpha is list of size num latent_space
@@ -195,7 +243,6 @@ class ProVLAE(ProVLAEBase):
 		self.alpha = alpha
 		if beta is None:
 			beta = [self.beta]*len(self.alpha)
-
 
 		self.latent_space = self.encoder(inputs)
 		reconstruction = self.decoder([i[0] for i in self.latent_space])

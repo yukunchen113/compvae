@@ -57,7 +57,7 @@ class Config(metaclass=ConfigMetaClass):
 		self.random_seed = None
 		self.num_latents = 10
 		self.beta = 30
-		self._get_model = ut.tf_custom.architectures.variational_autoencoder.BetaTCVAE
+		self._get_model = ut.tf_custom.architectures.vae.BetaTCVAE
 		
 	def _set_training(self):
 		self.batch_size = 32

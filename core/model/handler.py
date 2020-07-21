@@ -1,4 +1,3 @@
-from utils.tf_custom.architectures.variational_autoencoder import BetaTCVAE
 from utils.other_library_tools.disentanglementlib_tools import gaussian_log_density, total_correlation 
 from utils.tf_custom.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
 import os

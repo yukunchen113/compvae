@@ -106,6 +106,7 @@ class TrainVAE(TrainObj):
 		return self._preprocessing(inputs=inputs)
 
 	def save_model_weights(self):
+		#for i in self.model.weights: print(i.name)
 		self.model.save_weights(self.model_save_file)
 
 	def save_image(self, step):
@@ -148,7 +149,11 @@ class TrainVAE(TrainObj):
 		self.opt_man.run_optimizer(tape, loss)
 		if not timer_func is None: timer_func("applied gradients")
 
-
+		#print('step %s:\t rec loss = %s\t, reg loss = %s\t' % (
+		#	step, 
+		#	self.opt_man.reconstruction_loss.numpy(),
+		#	self.opt_man.regularization_loss.numpy(),
+		#	), "\r", end="")
 		print("step", step, "\r", end="")
 		if self.print_step(step):
 			print('training step %s:\t rec loss = %s\t, reg loss = %s\t' % (

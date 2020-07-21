@@ -1,99 +1,105 @@
-from utils.tf_custom.architectures import base
-from utils.tf_custom.architectures.encoders import GaussianEncoder
-from utils.tf_custom.architectures.decoders import Decoder
+from utils.tf_custom.architectures import base, block
+from utils.tf_custom.architectures.encoder import GaussianEncoder
+from utils.tf_custom.architectures.decoder import Decoder
 from . import architecture_params as ap
-from utilities.standard import BatchNormOptionWrapper 
 import tensorflow as tf
-class _ProVLAEGaussianEncoder64(GaussianEncoder):
-	def __init__(self, num_latents, layer_params, activations=None, **kwargs):
-		"""This is a gaussian encoder that takes in 64x64x3 images
+
+class ProVLAEGaussianEncoder(GaussianEncoder):
+	@classmethod
+	def get_available_layer_types(cls):
+		pool = base.AveragePooling2D
+		batch_norm = base.BatchNormalization
+		flatten = base.Flatten
+		conv2d_obj = base.Conv2D
+		conv2d_obj.default_kw = dict(padding="same") # add default keyword arguments, (default_kw only works with BaseTFWrapper instances)
+		conv2d_opt_obj = block.create_option_block(conv2d_obj, pool, batch_norm)		
+		dense_obj = base.Dense
+		dense_opt_obj = block.create_option_block(dense_obj, batch_norm, flatten, pool)
 		
+		# ProVLAE specific instructions, use a NetworkBlock as default and make resnet into an option
+		# networkblock
+		class networkblock_obj(block.NetworkBlock):
+			@classmethod
+			def get_available_layer_types(cls):
+				return [conv2d_obj, conv2d_opt_obj, dense_obj, dense_opt_obj]		
+		networkblock_opt_obj = block.create_option_block(networkblock_obj, pool, batch_norm)
+
+		# resnet
+		class resnet_obj(block.ResnetBlock):
+			@classmethod
+			def get_available_layer_types(cls):
+				return [conv2d_obj, conv2d_opt_obj]
+		resnet_obj = base.OptionWrapper(resnet_obj, identifier="resnet")# make resnet an option
+		resnet_opt_obj = block.create_option_block(resnet_obj, pool, batch_norm)
+
+		return [pool, batch_norm, conv2d_obj, dense_obj, resnet_obj, conv2d_opt_obj, dense_opt_obj, resnet_opt_obj, flatten, networkblock_obj, networkblock_opt_obj]
+
+class ProVLAEGaussianEncoder64(ProVLAEGaussianEncoder):
+	def __init__(self, num_latents, activation=None, layer_param=None, **kwargs):
+		"""
 		Args:
 			num_latents (int): the number of latent elements
 			shape_input (list): the shape of the input image (not including batch size)
 		"""
-		self.shape_input = [64,64,3]
-		self.layer_params = layer_params
-		if "num_channels" in kwargs:
-			self.shape_input[-1] = kwargs["num_channels"]
-		super().__init__(self.layer_params, num_latents, self.shape_input, activations, **kwargs)
+		shape_input = [64,64,3]
+		super().__init__(
+			layer_param=layer_param, 
+			num_latents=num_latents, 
+			shape_input=shape_input, 
+			activation=activation, 
+			**kwargs)
 	
-	def build_layer_types(self):
-		# overwrite the default functions
-		self.conv2d_obj = BatchNormOptionWrapper(tf.keras.layers.Conv2D)
-		self.ff_obj = BatchNormOptionWrapper(tf.keras.layers.Dense)
+class ProVLAEDecoder(Decoder):
+	@classmethod
+	def get_available_layer_types(cls):
+		# same as network.DeconvolutionalNeuralNetwork get_available_layer_types here:
+		upscale = base.UpSampling2D
+		upscale.default_kw = dict(interpolation="nearest")
+		batch_norm = base.BatchNormalization
+		reshape = base.Reshape
+		conv2dtranspose_obj = base.Conv2DTranspose
+		conv2dtranspose_obj.default_kw = dict(padding="same") # add default keyword arguments, (default_kw only works with BaseTFWrapper instances)
+		conv2dtranspose_opt_obj = block.create_option_block(conv2dtranspose_obj, upscale, batch_norm)
+		dense_obj = base.Dense
+		dense_opt_obj = block.create_option_block(dense_obj, batch_norm, reshape, upscale)
+		
+		# ProVLAE specific instructions, use a NetworkBlock as default and make resnet into an option
+		# networkblock
+		class networkblock_obj(block.NetworkBlock):
+			@classmethod
+			def get_available_layer_types(cls):
+				return [conv2dtranspose_obj, conv2dtranspose_opt_obj, dense_obj, dense_opt_obj]		
+		networkblock_opt_obj = block.create_option_block(networkblock_obj, upscale, batch_norm)
 
+		# resnet
+		class resnet_obj(block.ResnetBlock):
+			@classmethod
+			def get_available_layer_types(cls):
+				return [conv2dtranspose_obj, conv2dtranspose_opt_obj]
+		resnet_obj = base.OptionWrapper(resnet_obj, identifier="resnet")# make resnet an option
+		resnet_opt_obj = block.create_option_block(resnet_obj, upscale, batch_norm)
 
-class _ProVLAEDecoder64(Decoder):
-	def __init__(self, num_latents, layer_params, shape_before_flatten, activations=None, **kwargs):
+		return [upscale, batch_norm, conv2dtranspose_obj, dense_obj, resnet_obj, networkblock_obj, networkblock_opt_obj, conv2dtranspose_opt_obj, dense_opt_obj, resnet_opt_obj, reshape]
+
+class ProVLAEDecoder64(ProVLAEDecoder):
+	def __init__(self, num_latents, activation=None, layer_param=None, **kwargs):
 		"""Decoder network for 64x64x3 images,
 		used for to setup provlae
 		
 		Args:
-		    activations (None, dict): This is a dictionary of specified actions
+		    activation (None, dict): This is a dictionary of specified actions
 		"""
-		self.shape_image = [64,64,3]
-		self.layer_params = layer_params
-		self.shape_before_flatten = shape_before_flatten
+		shape_image = [64,64,3]
 		super().__init__(
-			self.layer_params, 
+			layer_param=layer_param, 
 			num_latents=num_latents, 
-			shape_image=self.shape_image, 
-			activations=activations, 
-			shape_before_flatten=self.shape_before_flatten, **kwargs)
+			shape_image=shape_image, 
+			activation=activation, 
+			is_create_sequential=False, # don't create sequential as we shouldn't build just yet - we need to redefine the layers.
+			**kwargs)	
 	
-	def build_layer_types(self):
-		# overwrite the default functions
-		self.conv2d_obj = BatchNormOptionWrapper(tf.keras.layers.Conv2DTranspose)
-		self.ff_obj = BatchNormOptionWrapper(tf.keras.layers.Dense)
-
-	def build_sequential(self): # do not build sequential so we can inject inputs
-		pass 
-
-	def create_conv2d_layers(self, layer_p, layer_num, conv2d_obj=None):
-		# create default layers and initialize
-		layer_type = self.is_which_layer(layer_p, is_separate=False)
-		layer_p = [i for i in layer_p if not type(i)==str]
-		layer = super().create_conv2d_layers(layer_p=layer_p, layer_num=layer_num, conv2d_obj=conv2d_obj)
-		
-
-		# identify new type of layer
-		if layer_type == 4:
-			layer = base.ConvBlock(*layer_p,
-								activation=self._apply_activation(layer_num),
-								conv2d_obj=conv2d_obj
-								)
-		return layer
-	
-	def create_ff_layers(self, layer_p, layer_num, ff_obj=None):
-		layer_type = self.is_which_layer(layer_p)
-		layer_p_no_options = [i for i in layer_p if not type(i)==str]
-		if ff_obj is None:
-			ff_obj = self.ff_obj
-		assert layer_type == 1
-		ff_layer = ff_obj(*layer_p, activation=self._apply_activation(layer_num))
-		return ff_layer
-	
-	@classmethod
-	def is_which_layer(cls, layer_param, is_separate=True):
-		num = base.ConvNetBase.is_which_layer(layer_param, is_separate)
-		if not num == 1:
-			if is_separate:
-				layer_param, _ = cls.separate_upscale_or_pooling_parameter(layer_param)
-
-			# overwrite resnet
-			if "resnet" in layer_param and base.ResnetBlock.is_layers_valid([i for i in layer_param if not i=="resnet"]):
-				num = 3
-
-			# add conv block as default
-			print(layer_param)
-			if base.ConvBlock.is_layers_valid(layer_param):
-				num = 4
-
-		return num
-
-class ProVLAEGaussianEncoderLarge64(_ProVLAEGaussianEncoder64):
-	def __init__(self, num_latents=7, activations=None, **kwargs):
+class ProVLAEGaussianEncoderLarge64(ProVLAEGaussianEncoder64):
+	def __init__(self, num_latents=7, activation=None, **kwargs):
 		"""This is a gaussian encoder that takes in 64x64x3 images
 		This is the architecture used in ProVLAE literature for CelebA
 		
@@ -103,27 +109,26 @@ class ProVLAEGaussianEncoderLarge64(_ProVLAEGaussianEncoder64):
 		"""
 		super().__init__(
 			num_latents=num_latents, 
-			layer_params=ap.vlae_encoder_layer_params_large64,
-			activations=activations, 
+			activation=activation, 
+			layer_param=ap.vlae_encoder_layer_param_large64,
 			**kwargs)
 
-class ProVLAEDecoderLarge64(_ProVLAEDecoder64):
-	def __init__(self, num_latents=7, activations=None, **kwargs):
+class ProVLAEDecoderLarge64(ProVLAEDecoder64):
+	def __init__(self, num_latents=7, activation=None, **kwargs):
 		"""Decoder network for 64x64x3 images
 		This is the architecture used in ProVLAE literature for CelebA
 		
 		Args:
-		    activations (None, dict): This is a dictionary of specified actions
+		    activation (None, dict): This is a dictionary of specified actions
 		"""
 		super().__init__(
 			num_latents=num_latents, 
-			layer_params=ap.vlae_decoder_layer_params_large64, 
-			shape_before_flatten=ap.vlae_shape_before_flatten_large64, 
-			activations=activations, 
+			activation=activation, 
+			layer_param=ap.vlae_decoder_layer_param_large64, 
 			**kwargs)
 
-class ProVLAEGaussianEncoderSmall64(_ProVLAEGaussianEncoder64):
-	def __init__(self, num_latents=4, activations=None, **kwargs):
+class ProVLAEGaussianEncoderSmall64(ProVLAEGaussianEncoder64):
+	def __init__(self, num_latents=4, activation=None, **kwargs):
 		"""This is a gaussian encoder that takes in 64x64x3 images
 		This is the architecture used in ProVLAE literature for Shapes3D and dsprites
 		
@@ -131,24 +136,28 @@ class ProVLAEGaussianEncoderSmall64(_ProVLAEGaussianEncoder64):
 			num_latents (int): the number of latent elements
 			shape_input (list): the shape of the input image (not including batch size)
 		"""
+		if activation is None:
+			activation = ap.vlae_activations_encoder_small64
 		super().__init__(
 			num_latents=num_latents, 
-			layer_params=ap.vlae_encoder_layer_params_small64,
-			activations=activations, 
+			activation=activation, 
+			layer_param=ap.vlae_encoder_layer_param_small64,
 			**kwargs)
 
-class ProVLAEDecoderSmall64(_ProVLAEDecoder64):
-	def __init__(self, num_latents=4, activations=None, **kwargs):
+class ProVLAEDecoderSmall64(ProVLAEDecoder64):
+	def __init__(self, num_latents=4, activation=None, **kwargs):
 		"""Decoder network for 64x64x3 images
+		This is the architecture used in ProVLAE literature for Shapes3D
 		
 		Args:
-		    activations (None, dict): This is a dictionary of specified actions
+		    activation (None, dict): This is a dictionary of specified actions
 		"""
+		if activation is None:
+			activation = ap.vlae_activations_decoder_small64
 		super().__init__(
 			num_latents=num_latents, 
-			layer_params=ap.vlae_decoder_layer_params_small64, 
-			shape_before_flatten=ap.vlae_shape_before_flatten_small64, 
-			activations=activations, 
+			activation=activation, 
+			layer_param=ap.vlae_decoder_layer_param_small64, 
 			**kwargs)
 
 		

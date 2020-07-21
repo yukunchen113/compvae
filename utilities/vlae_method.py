@@ -29,7 +29,7 @@ class VLAETraversal(ut.visualize.Traversal): #create wrapper for model encoder a
 		return ret
 	@property
 	def num_latents(self):
-		num_latents = sum([i.num_latents for i in self.model.latent_layers if not i is None])+self.model.num_latents
+		num_latents = sum([i.num_latents for i in self.model.ladders if not i is None])+self.model.num_latents
 		return num_latents
 
 	@property

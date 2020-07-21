@@ -17,14 +17,18 @@ def mix_parameters(params):
 			ret.append(s)	
 	return ret
 
-def create_model(base_path, **kw):
+def create_model(base_path, model_size, **kw):
 	import core.config as cfg 
 	from core.model.handler import ProVLAEModelHandler
 	print("Running %s"%base_path)
 	config = cfg.config.ConfigShapes3D()
 	for k,v in kw.items():
 		setattr(config, k, v)
-	modhand = ProVLAEModelHandler(config=config, base_path=base_path, config_processing=cfg.addition.make_vlae_large)
+	if model_size:
+		config_processing = cfg.addition.make_vlae_large
+	else:
+		config_processing = cfg.addition.make_vlae_small
+	modhand = ProVLAEModelHandler(config=config, base_path=base_path, config_processing=config_processing)
 	return modhand
 
 def run_training(base_path, gpu_num=0, **kw):
@@ -38,19 +42,19 @@ def main():
 
 	# this model conditions the 0th latent on the next 3 latents through KL
 	# path
-	base_path = "experiments/shapes3d/exp2/exp_"
+	base_path = "experiments/shapes3d/exp3_sm2/exp_"
 	if os.path.exists(os.path.dirname(base_path)):
 		if not "y" in input("do you want to use existing path?"):
 			exit()
 	
 	# set parameters
 	parameters = OrderedDict(
-		random_seed = [1,5,20], #Using BetaVAE
-		beta = [1], # will be overwritten
-		num_latents = [7],
-		latent_connections = [[0,1,2]],
+		beta = [8,3,1], # will be overwritten
+		random_seed = [1,5], #Using BetaVAE
+		num_latents = [3,7],
+		model_size=[0]
 		)
-	parameters['hparam_schedule'] = [lambda step: ep.hparam_schedule_alpha_beta2(step, len(i)+1, final_beta=j) for i in parameters["latent_connections"] for j in parameters["beta"]]
+	#parameters['hparam_schedule'] = [lambda step: ep.hparam_schedule_alpha_beta2(step, len(i)+1, final_beta=j) for i in parameters["latent_connections"] for j in parameters["beta"]]
 
 
 
