@@ -5,6 +5,7 @@ from collections import OrderedDict
 from utilities.model_multiprocess import train_wrapper, starmap_with_kwargs
 import numpy as np
 import execute_params as ep
+import shutil
 def mix_parameters(params):
 	if params == {}:
 		return [{}]
@@ -42,20 +43,47 @@ def main():
 
 	# this model conditions the 0th latent on the next 3 latents through KL
 	# path
-	base_path = "experiments/shapes3d/exp3_sm2/exp_"
+	base_path = "experiments/shapes3d/independent_factors/bn_lg_60000_anneal4_quantized"
 	if os.path.exists(os.path.dirname(base_path)):
 		if not "y" in input("do you want to use existing path?"):
 			exit()
+
+	# copy code files to basepath for preservation of experiments
+	ignore_folders_contain = ["test","exp"]
+	code_files = []# if i[-1].endswith(".py")]
+	for i in os.walk("."):
+		for j in i[-1]: 
+			is_valid = True
+			for exc in ignore_folders_contain: 
+				if not j.endswith(".py") or exc in i[0] or exc in j:
+					is_valid = False
+			if is_valid:
+				files_set = (i[0],j)
+				code_files.append(files_set)
+
+	for dirn,file in code_files:
+		dstdir = os.path.join(base_path,"code",dirn)
+		if not os.path.exists(dstdir):
+			os.makedirs(dstdir)
+		filepath = os.path.join(dirn,file)
+		fullpath = os.path.join(dstdir,file) #remove the period, which will always be the 0th element
+		shutil.copyfile(filepath,fullpath)
+
 	
 	# set parameters
 	parameters = OrderedDict(
-		beta = [8,3,1], # will be overwritten
-		random_seed = [1,5], #Using BetaVAE
-		num_latents = [3,7],
-		model_size=[0]
+		beta = [4], # will be overwritten
+		num_latents = [8,3],
+		random_seed = [1,5,10], #Using BetaVAE
+		model_size=[1],
 		)
-	#parameters['hparam_schedule'] = [lambda step: ep.hparam_schedule_alpha_beta2(step, len(i)+1, final_beta=j) for i in parameters["latent_connections"] for j in parameters["beta"]]
+	#parameters['hparam_schedule'] = [lambda step: ep.hparam_schedule_alpha_beta(step, 4, final_beta=j) for j in parameters["beta"]]
 
+	###########################################################
+	# WARNING: hparam_schedule_alpha_beta3 is last layer only #
+	###########################################################
+	parameters['hparam_schedule'] = [lambda step: ep.hparam_schedule_alpha_beta3_quantized(step, 4, 
+		beta_duration=70000, start_beta=s, final_beta=4, n_multiplier=100) for s in [15]]
 
 
 	kwargs_set = mix_parameters(parameters)
@@ -71,7 +99,7 @@ def main():
 			folder_index[index_set] = i
 			i+=1
 		sf = ["%s_%s"%(i, runset[i]) for i in sub_folder] 
-		runset["base_path"] = os.path.join(base_path+str(folder_index[index_set]), *sf)
+		runset["base_path"] = os.path.join(base_path, "exp_"+str(folder_index[index_set]), *sf)
 
 	##################
 	# run processing #

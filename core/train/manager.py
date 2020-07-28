@@ -121,8 +121,8 @@ class TrainVAE(TrainObj):
 
 	@staticmethod
 	def save_image_step(step):
-		steps = [500, 1000, 2500, 5000]#[1,2,3,5,7,10,15,20,30,40,75,100,200,300,500,700,1000,1500,2500]
-		return step in steps or step%5000 == 0
+		steps = [500, 1000]#[1,2,3,5,7,10,15,20,30,40,75,100,200,300,500,700,1000,1500,2500]
+		return step in steps or step%2500 == 0
 	
 	@staticmethod
 	def print_step(step):
@@ -160,7 +160,7 @@ class TrainVAE(TrainObj):
 				step, 
 				self.opt_man.reconstruction_loss.numpy(),
 				self.opt_man.regularization_loss.numpy(),
-				))
+				), self.hparam_schedule(step))
 
 		if self.save_image_step(step):
 			self.save_image(step)

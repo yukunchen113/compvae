@@ -7,9 +7,14 @@ from core.train.manager import TrainProVLAE
 ###############
 # VLAE Method #
 ###############
+class LargeProVLAE(ProVLAE):
+	def create_default_vae(self, **kwargs):
+		# default encoder decoder pair:
+		self.create_large_provlae64(**kwargs)
+
+
 def make_vlae_large(config_obj):
-	config_obj._get_model = ProVLAE
-	ProVLAE.create_default_vae = ProVLAE.create_large_provlae64
+	config_obj._get_model = LargeProVLAE
 	# model parameter setup
 	if not hasattr(config_obj, "gamma"): config_obj.gamma = 0.1
 	if not hasattr(config_obj, "latent_connections"): config_obj.latent_connections = None
