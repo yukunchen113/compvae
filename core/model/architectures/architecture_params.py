@@ -66,32 +66,31 @@ vlae_latent_spaces_small64 = [
 		],
 	]
 #"""
-
 #"""
+# Standard Parameters From https://openreview.net/pdf?id=SygagpEKwB
 vlae_encoder_layer_param_small64 = [
-	[32,4,2],
-	[32,4,2],
-	[32,4,2],
-	[[32,4,2],# this is grouped together so alpha could be applied on it.
-		[["flatten"],[256]]],
+	[[32,4,2],["bn"]],
+	[[32,4,2],["bn"]],
+	[[64,2,2],["bn"]],
+	[[[64,2,2],["bn"]],# this is grouped together so alpha could be applied on it.
+		[["flatten"],[256],["bn"]]],
 	]
-
 vlae_decoder_layer_param_small64 =[
-	[[256], # this is grouped together so alpha could be applied on it.
-		[[4*4*32],["reshape",[4,4,32]]],
-		[32,4,2]],
-	[32,4,2],
-	[32,4,2],
+	[[[256],["bn"]], # this is grouped together so alpha could be applied on it.
+		[[4*4*64],["bn"],["reshape",[4,4,64]]],
+		[[64,4,2],["bn"]]],
+	[[32,4,2],["bn"]],
+	[[32,4,2],["bn"]],
 	[3,4,2],
 	]
 vlae_latent_spaces_small64 = [
 	[#latent layer 1
-		[[32,4,2],[["flatten"],[256]]],
-		lambda output_shape: [[256], [[int(np.prod(output_shape))],["reshape", list(output_shape)]]] # decoder
+		[[[32,4,2],["bn"]],[["flatten"],[256],["bn"]]],
+		lambda output_shape: [[[256],["bn"]], [[int(np.prod(output_shape))],["bn"],["reshape", list(output_shape)]]] # decoder
 		],
 	[#latent layer 2
-		[[32,4,2],[["flatten"],[256]]],
-		lambda output_shape: [[256], [[int(np.prod(output_shape))],["reshape", list(output_shape)]]] # decoder
+		[[[64,2,2],["bn"]],[["flatten"],[256],["bn"]]],
+		lambda output_shape: [[[256],["bn"]], [[int(np.prod(output_shape))],["bn"],["reshape", list(output_shape)]]] # decoder
 		],
 	]
 #"""

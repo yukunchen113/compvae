@@ -134,7 +134,7 @@ class TrainVAE(TrainObj):
 		# apply gradient tape
 		hparams = {}
 		if not self.hparam_schedule is None:
-			hparams = self.hparam_schedule(step)
+			hparams = self.hparam_schedule(step, model=self.model)
 		tape, loss = self.opt_man.tape_gradients(inputs, **hparams)
 		if not timer_func is None: timer_func("taped gradients")
 	
@@ -160,7 +160,7 @@ class TrainVAE(TrainObj):
 				step, 
 				self.opt_man.reconstruction_loss.numpy(),
 				self.opt_man.regularization_loss.numpy(),
-				), self.hparam_schedule(step))
+				), hparams)
 
 		if self.save_image_step(step):
 			self.save_image(step)

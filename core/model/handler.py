@@ -132,10 +132,12 @@ class ModelHandler:
 				step=step, model_save_steps=config.model_save_steps, 
 				total_steps=config.total_steps,
 				custom_inputs=data[0])
+
 			if np.isnan(step) or not (step%config.model_save_steps): 
 				np.savez(train_status_path, step=step)
+				self.save()
 
-		print("finished beta %d"%config.beta)
+		print("finished beta",config.beta)
 
 
 	def train_stats(self):
@@ -171,9 +173,14 @@ class ModelHandler:
 
 	def get_config(self):
 		if not self._config_processing is None:
-			return self._config_processing(copy.deepcopy(self._config))
+			config = self._config_processing(copy.deepcopy(self._config))
 		else:
-			return self._config	
+			config = self._config
+		config = self.config_connect(config)# subclass overwritten function
+		return config
+
+	def config_connect(self, config):
+		return config
 
 	def save(self, config_processing=None, save_config_processing=True):
 		"""
@@ -183,7 +190,6 @@ class ModelHandler:
 		mpstr=pprint.pformat(self.model_parameters, width=100)
 		with open(self.model_parameters_path, "w") as f:
 			f.write(mpstr)
-
 		# save configs
 		if self._config_processing is None:
 			process_save = config_processing
@@ -214,6 +220,10 @@ class ProVLAEModelHandler(ModelHandler):
 			print("found existing model weights. Loading...")
 			self.model.load_weights(self.model_save_file)
 			print("Done")
+
+	def config_connect(self,config):
+		config.hparam_schedule = self._config.hparam_schedule
+		return config
 
 	def _configure_train(self, *args, hparam_schedule=None, **kwargs):
 		if hparam_schedule is None:

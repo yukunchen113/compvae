@@ -103,7 +103,7 @@ class ProVLAE(ProVLAEBase):
 		
 		self._alpha = None
 		self.latent_space = None
-
+		self._past_kld = None
 	def _setup(self):
 		# redefine encoder and decoder
 		self._setup_encoder()
@@ -236,6 +236,10 @@ class ProVLAE(ProVLAEBase):
 		assert len(alpha) == (len(self.latent_connections)+1)
 		self._alpha = alpha
 
+	@property
+	def past_kld(self):
+		return self._past_kld
+
 	def call(self, inputs, alpha=None, beta=None):
 		# alpha is list of size num latent_space
 		#called during each training step and inference
@@ -252,46 +256,102 @@ class ProVLAE(ProVLAEBase):
 
 		return reconstruction
 
-	def provlae_regularizer(self, latent_space, alpha, beta):
+	def provlae_regularizer(self, latent_space, alpha, beta, routing={}):
+		"""Regularizer for latent space
+		
+		Args:
+			latent_space (list): latent space output from encoder [num layers, (samples,mean,logvar), batch size, num latents]
+			alpha (list): list of ints or lists, if is list, must be length of num latents
+			beta (list): list of ints or lists, if is list, must be length of num latents
+			routing (dict): {(prior layer num, prior element num):[layer num, [conditioned elements]]}
+		
+		Returns:
+			tf tensor: regularization loss
+		"""
 		#regularizer creation for each specified layer.
 		# use regularizations from parent vae
 		losses = []
+		self._past_kld = []
+		network_reg_params=self.create_regularized_routing(latent_space, routing)
 		for i,ls in enumerate(latent_space):
 			
 			# select the prior to be a specific distribution
-			"""
-			if i == 1:
-				s, m, lv = latent_space[0]
-				ncl = 3 # conditioned subspace
-				lsn = 1 # latent number for conditioning
-				p1 = tf.zeros_like(m[:,ncl:])
-				p2 = tf.zeros_like(m[:,:ncl])
-				m = tf.concat((p1+tf.expand_dims(m[:, lsn],-1), p2), -1)
-				lv = tf.concat((p1+tf.expand_dims(lv[:, lsn],-1), p2), -1)
-				reg_loss = self.regularizer(*ls, m, lv)
-			else:
-				reg_loss = self.regularizer(*ls)
-			"""
-			reg_loss = self.regularizer(*ls)
 
 			if alpha[i]:
-				reg_loss = beta[i]*reg_loss
+				reg_param = beta[i]
 			else:
-				reg_loss = self.gamma*reg_loss
+				reg_param = self.gamma
+			
+			layer_reg_params=network_reg_params[i]
+			reg_loss, kld = None,None
+			reg_param=np.divide(reg_param,layer_reg_params[-1]).reshape(1,-1)# reshape to account for batch size
+			for params in layer_reg_params[:-1]:
+				m,lv=params
+				rloss,kl=self.regularizer(*ls, m, lv, beta=reg_param, return_past_kld=True)
+				if reg_loss is None:
+					reg_loss,kld=rloss,kl
+				else:
+					reg_loss+=rloss
+					kld+=kl
 
 			losses.append(reg_loss)
+			self._past_kld.append(kld)
 		return losses
 
-	def regularizer(self, sample, mean, logvar, cond_mean=None, cond_logvar=None):
-		# regularization uses disentanglementlib method
+	def create_regularized_routing(self,latent_space,routing):
+		"""Creates a routing for a given layer.
+		
+		Args:
+			latent_space (list): latent space output from encoder [num layers, (samples,mean,logvar), batch size, num latents]
+		    routing (dict): {(prior layer num->pln, prior element num->pen):[layer num, [conditioned elements->cond_elements]]}
 
+		Returns:
+			list of list of tuple [[(prior mean, prior logvar),...,beta_divisors]], first list is number of latent layers, 2nd dim is for num of regularizations
+		"""
+		ls_shape = latent_space[0][0].shape
+		network_reg = []
+		for i,ls in enumerate(latent_space):
+			layer_reg = []
+			beta_divisors=np.zeros(ls_shape[-1])
+			for k,v in routing.items():
+				if not i == v[0]: continue # only use the routing that is relevent to this layer
+				cond_elements=v[1] #conditioned elements
+				pln,pen=k#prior latent layer number, and prior element number
+				_,m,lv=latent_space[pln]#get the mean and logvar for this latent space
+				beta_divisors[cond_elements]+=1
+				mean=tf.where(
+					np.isin(np.arange(ls_shape[-1]),cond_elements).astype(bool).reshape(1,-1), # masking for conditioned elements
+					tf.broadcast_to(tf.expand_dims(m[:,pen],axis=-1),ls_shape), # latent prior
+					tf.zeros(ls_shape)) # normal gaussian prior
+				logvar=tf.where(
+					np.isin(np.arange(ls_shape[-1]),cond_elements).astype(bool).reshape(1,-1), # masking for conditioned elements
+					tf.broadcast_to(tf.expand_dims(lv[:,pen],axis=-1),ls_shape), # latent prior
+					tf.zeros(ls_shape)) # normal gaussian prior
+				layer_reg.append((mean,logvar))
+
+			if layer_reg == []:#if layer was not specified in routing
+				layer_reg.append((tf.zeros(ls_shape),tf.zeros(ls_shape)))
+
+			beta_divisors=np.where(beta_divisors==0,1,beta_divisors)#0 represents nonaltered gaussian, beta divisor should be one for this
+			layer_reg.append(beta_divisors)
+			network_reg.append(layer_reg)
+		return network_reg
+
+
+	def regularizer(self, sample, mean, logvar, cond_mean=None, cond_logvar=None, beta=None, *,return_past_kld=False):
+		# regularization uses disentanglementlib method
 		assert not (cond_mean is None != cond_logvar is None), "mean and logvar must both be sepecified if one is specified"
 		if cond_mean is None:
 			cond_mean = tf.zeros_like(mean)
 			cond_logvar = tf.zeros_like(logvar)
-		kl_loss = self.beta*kl_divergence_between_gaussians(mean, logvar, cond_mean, cond_logvar)
+		if beta is None:
+			beta = self.beta
+		kld = kl_divergence_between_gaussians(mean, logvar, cond_mean, cond_logvar)
+		kl_loss = beta*kld
 		kl_loss = tf.reduce_sum(kl_loss,1)
-		return kl_loss
+		if not return_past_kld:
+			return kl_loss
+		return kl_loss, kld
 
 class CondVAE(BetaTCVAE):
 	def __init__(self, beta, name="CondVAE", **kwargs):
