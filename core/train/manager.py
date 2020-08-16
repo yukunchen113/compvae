@@ -103,9 +103,10 @@ class TrainVAE(TrainObj):
 
 	def preprocess(self, inputs=None, **kwargs):
 		if inputs is None: inputs, _ = self.dataset()
-		return self._preprocessing(inputs)
+		return self._preprocessing(inputs=inputs)
 
 	def save_model_weights(self):
+		#for i in self.model.weights: print(i.name)
 		self.model.save_weights(self.model_save_file)
 
 	def save_image(self, step):
@@ -120,39 +121,46 @@ class TrainVAE(TrainObj):
 
 	@staticmethod
 	def save_image_step(step):
-		steps = [500, 1000, 2500, 5000]#[1,2,3,5,7,10,15,20,30,40,75,100,200,300,500,700,1000,1500,2500]
-		return step in steps or step%5000 == 0
+		steps = [500, 1000]#[1,2,3,5,7,10,15,20,30,40,75,100,200,300,500,700,1000,1500,2500]
+		return step in steps or step%2500 == 0
 	
 	@staticmethod
 	def print_step(step):
 		return step%500 == 0
 
-	def train_step(self, step, model_save_steps, total_steps, timer_func=None):
+	def train_step(self, step, model_save_steps, total_steps, custom_inputs=None, timer_func=None):
 		step+=1
-		inputs = self.preprocess(None, measure_time=not timer_func is None)
-
+		inputs = self.preprocess(custom_inputs, measure_time=not timer_func is None)
 		# apply gradient tape
 		hparams = {}
 		if not self.hparam_schedule is None:
-			hparams = self.hparam_schedule(step)
+			hparams = self.hparam_schedule(step, model=self.model)
 		tape, loss = self.opt_man.tape_gradients(inputs, **hparams)
 		if not timer_func is None: timer_func("taped gradients")
 	
+		
+
 		if np.isnan(loss.numpy()):
 			print("Nan Loss on step %d"%step)
 			return np.nan
 
+		
+
 		self.opt_man.run_optimizer(tape, loss)
 		if not timer_func is None: timer_func("applied gradients")
 
-
-		print("step %d\r"%step, end="")
+		#print('step %s:\t rec loss = %s\t, reg loss = %s\t' % (
+		#	step, 
+		#	self.opt_man.reconstruction_loss.numpy(),
+		#	self.opt_man.regularization_loss.numpy(),
+		#	), "\r", end="")
+		print("step", step, "\r", end="")
 		if self.print_step(step):
 			print('training step %s:\t rec loss = %s\t, reg loss = %s\t' % (
 				step, 
 				self.opt_man.reconstruction_loss.numpy(),
 				self.opt_man.regularization_loss.numpy(),
-				))
+				), hparams)
 
 		if self.save_image_step(step):
 			self.save_image(step)

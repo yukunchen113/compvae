@@ -1,4 +1,3 @@
-from utils.tf_custom.architectures.variational_autoencoder import BetaTCVAE
 from utils.other_library_tools.disentanglementlib_tools import gaussian_log_density, total_correlation 
 from utils.tf_custom.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
 import os
@@ -76,8 +75,7 @@ class ModelHandler:
 		tf.random.set_seed(config.random_seed)
 		self.model = config.get_model(
 			beta=config.beta, 
-			num_latents=config.num_latents, 
-			num_channels=config.num_channels)
+			num_latents=config.num_latents)
 		
 		#self.model.save_weights(self.model_save_file)
 
@@ -93,7 +91,7 @@ class ModelHandler:
 		config = self.config
 
 		# training
-		dataset = ut.dataset.DatasetBatch(config.dataset, config.batch_size).get_next 
+		dataset = config.dataset_manager.batch(config.batch_size)
 
 		# define parameters
 		self.training_object = config.TrainVAE(
@@ -111,7 +109,7 @@ class ModelHandler:
 			**kwargs
 			)
 		return self.training_object
-
+		
 	def train(self):
 		config = self.config
 		train_status_path = os.path.join(self.base_path, config.train_status_path) # model parameters path
@@ -126,16 +124,21 @@ class ModelHandler:
 			step = train_status["step"]
 		else:		
 			step = -1 # the previous step.
-		while 1: # set this using validation
+
+		for data in config.dataset_manager.batch(config.batch_size):
 			if np.isnan(step):
 				break
 			step = self.training_object.train_step(
 				step=step, model_save_steps=config.model_save_steps, 
-				total_steps=config.total_steps)
+				total_steps=config.total_steps,
+				custom_inputs=data[0])
+
 			if np.isnan(step) or not (step%config.model_save_steps): 
 				np.savez(train_status_path, step=step)
+				self.save()
 
-		print("finished beta %d"%config.beta)
+		print("finished beta",config.beta)
+
 
 	def train_stats(self):
 		self._configure_train()
@@ -170,9 +173,14 @@ class ModelHandler:
 
 	def get_config(self):
 		if not self._config_processing is None:
-			return self._config_processing(copy.deepcopy(self._config))
+			config = self._config_processing(copy.deepcopy(self._config))
 		else:
-			return self._config	
+			config = self._config
+		config = self.config_connect(config)# subclass overwritten function
+		return config
+
+	def config_connect(self, config):
+		return config
 
 	def save(self, config_processing=None, save_config_processing=True):
 		"""
@@ -182,7 +190,6 @@ class ModelHandler:
 		mpstr=pprint.pformat(self.model_parameters, width=100)
 		with open(self.model_parameters_path, "w") as f:
 			f.write(mpstr)
-
 		# save configs
 		if self._config_processing is None:
 			process_save = config_processing
@@ -197,7 +204,7 @@ class ModelHandler:
 class ProVLAEModelHandler(ModelHandler):
 	def __init__(self, *args, config_processing=None, **kwargs):
 		if config_processing is None:
-			config_processing = cfg.addition.make_vlae_compatible
+			config_processing = cfg.addition.make_vlae_large
 		super().__init__(*args, config_processing=config_processing, **kwargs)
 
 	def create_model(self, load_prev=True):
@@ -207,13 +214,16 @@ class ProVLAEModelHandler(ModelHandler):
 			beta=config.beta,
 			latent_connections = config.latent_connections,
 			gamma = config.gamma,
-			num_latents=config.num_latents, 
-			num_channels=config.num_channels)
+			num_latents=config.num_latents)
 
 		if load_prev and os.path.exists(self.model_save_file):
 			print("found existing model weights. Loading...")
 			self.model.load_weights(self.model_save_file)
 			print("Done")
+
+	def config_connect(self,config):
+		config.hparam_schedule = self._config.hparam_schedule
+		return config
 
 	def _configure_train(self, *args, hparam_schedule=None, **kwargs):
 		if hparam_schedule is None:

@@ -2,3 +2,4 @@ exp*
 __pycache__/
 test*
 todolist.md
+.idea/

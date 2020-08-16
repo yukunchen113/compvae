@@ -2,40 +2,6 @@ import utils as ut
 import tensorflow as tf 
 import numpy as np 
 import importlib.util
-
-
-vlae_encoder_layer_params = [
-	[64,4,2,None],
-	[128,4,2,None],
-	[256,4,2,None],
-	[512,4,2,None],
-	[1024],
-	[1024],
-	]
-
-vlae_decoder_layer_params = [
-	[1024],
-	[1024],
-	[[512,4,1], [256,4,2], None],
-	[[128,4,2], [64,4,1], None],
-	[64,4,2, None],
-	[3,4,2, None],
-	]
-
-vlae_shape_before_flatten = [4,4,512]
-
-vlae_latent_spaces = [
-	[[64,4,2,None],[64,4,1,None]],
-	[[128,4,2,None],[256,4,1,None]],
-	[[256,4,2,None],[512,4,1,None]],
-	]
-
-
-
-
-
-
-
 #################
 # Visualization #
 #################
@@ -63,7 +29,7 @@ class VLAETraversal(ut.visualize.Traversal): #create wrapper for model encoder a
 		return ret
 	@property
 	def num_latents(self):
-		num_latents = sum([i.num_latents for i in self.model.latent_layers if not i is None])+self.model.num_latents
+		num_latents = sum([i.num_latents for i in self.model.ladders if not i is None])+self.model.num_latents
 		return num_latents
 
 	@property

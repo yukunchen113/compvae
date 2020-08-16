@@ -5,6 +5,8 @@ import utils as ut
 import numpy as np
 from utilities.standard import ConfigMetaClass, ImageMSE, ImageBCE
 from core.train.manager import TrainVAE
+import tensorflow_datasets as tfds
+
 
 #limit GPU usage (from tensiorflow code)
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -54,9 +56,8 @@ class Config(metaclass=ConfigMetaClass):
 	def _set_model(self):
 		self.random_seed = None
 		self.num_latents = 10
-		self.num_channels = 3
 		self.beta = 30
-		self._get_model = ut.tf_custom.architectures.variational_autoencoder.BetaTCVAE
+		self._get_model = ut.tf_custom.architectures.vae.BetaTCVAE
 		
 	def _set_training(self):
 		self.batch_size = 32
@@ -125,6 +126,73 @@ class Config256(Config):
 			inputs = tf.image.resize(inputs, final_image_size)
 		return super().preprocessing(inputs, image_crop_size, final_image_size)
 
+class TFDSShapes3DWrapper():
+	def __init__(self, dataset_manager):
+		self.dataset_manager = dataset_manager
 
+	def __call__(self, batch=None):
+		dm = self.dataset_manager
+		if not batch is None:
+			dm=dm.batch(batch)
+		dataset = dm.as_numpy_iterator().__iter__().__next__()
+		return dataset
 
+	def batch(self, batch_size):
+		self.dataset_manager = self.dataset_manager.batch(batch_size, drop_remainder=True)
+		return self
 
+class ConfigShapes3D(Config):
+	"""Config used to train shapes3d
+	"""
+	def _set_dataset(self):
+		self._dataset = None
+		self._dataset_manager = None	
+		self._inputs_test = None
+	def _set_model(self):
+		super()._set_model()
+		self.beta = 8
+		self.num_latents = 3
+	
+	@property
+	def dataset(self):
+		self._dataset = TFDSShapes3DWrapper(self.dataset_manager)
+		return self._dataset
+
+	@property
+	def dataset_manager(self):
+		if self._dataset_manager is None:
+			def get_shape_3d_data(data):
+				images = data["image"]
+				labels = tf.convert_to_tensor([v for k,v in data.items(
+					) if not k =="image"], dtype=tf.float32)
+				return images, labels
+
+			self._dataset_manager = tfds.load('shapes3d',
+			 	data_dir=ut.general_constants.tfds_datapath,
+			 	split="train", # this is all split examples for shape3d
+		 		)
+			self._dataset_manager = self._dataset_manager.shuffle(20000)
+			self._dataset_manager = self._dataset_manager.repeat(-1)
+			self._dataset_manager = self._dataset_manager.prefetch(tf.data.experimental.AUTOTUNE)
+			self._dataset_manager = self._dataset_manager.map(get_shape_3d_data)
+
+		if not self._dataset is None:
+			self._dataset_manager = self._dataset.dataset_manager
+
+		return self._dataset_manager
+
+	@property
+	def inputs_test(self):
+		# do not store inputs test data to minimize pickle size
+		# assumes that dataset function will not change
+		if self._inputs_test is None:
+			self._inputs_test, _ = self.dataset(32)
+		return self._inputs_test
+	
+	def preprocessing(self, inputs, *ar, **kw):
+		return tf.image.convert_image_dtype(inputs, tf.float32)
+
+	def _set_training(self):
+		super()._set_training()
+		self.batch_size = 100
+		#self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.00005)

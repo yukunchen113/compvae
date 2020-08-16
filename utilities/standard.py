@@ -2,7 +2,7 @@ import utils as ut
 import tensorflow as tf 
 import numpy as np 
 import importlib.util
-
+from functools import reduce
 ###########################
 # Config and Setup  Utils #
 ###########################
@@ -61,9 +61,9 @@ def import_given_path(name, path):
 	return mod
 
 
-######################
-# Architecture Utils #
-######################
+#######################
+# Training/Loss Utils #
+#######################
 
 # reconstruction loss
 class ImageMSE(): # mean squared error
@@ -89,11 +89,14 @@ class ImageBCE(): # binary cross entropy
 	def __init__(self, loss_process=lambda x:x):
 		self.loss_process = loss_process
 
-	def __call__(self, actu, pred):
+	def __call__(self, actu, pred, label_smooting_pad=1e-5):
 		reduction_axis = range(1,len(actu.shape))
 
+		# apply label smooting
+		actu = actu*(1-2*label_smooting_pad)+label_smooting_pad
+		pred = pred*(1-2*label_smooting_pad)+label_smooting_pad
+
 		# per point
-		sbf = actu.shape
 		loss = actu*(-tf.math.log(pred))+(1-actu)*(-tf.math.log(1-pred))
 
 		# apply processing to first 3 channels
@@ -111,12 +114,10 @@ def kld_loss_reduction(kld_loss):
 	kld_loss = tf.math.reduce_mean(kld_loss)
 	return kld_loss
 
-def is_weighted_layer(layer):
-	return bool(layer.weights)
 
-def get_weighted_layers(layers):
-	return [l for l in layers if is_weighted_layer(l)]
-
+######################
+# Architecture Utils #
+######################
 def split_latent_into_layer(inputs, num_latents):
 	mean = inputs[:,:num_latents]
 	logvar = inputs[:,num_latents:]
@@ -124,6 +125,14 @@ def split_latent_into_layer(inputs, num_latents):
 		tf.shape(logvar))+mean
 	return sample, mean, logvar
 
+def set_shape(layer, shape):
+	sequence = tf.keras.Sequential([
+		tf.keras.Input(shape), layer])
+	return sequence
+
+#######################
+# Visualization Utils #
+#######################
 def image_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_visualizable=True, latent_of_focus=None, Traversal=ut.visualize.Traversal, return_traversal_object=False):
 	"""Standard raversal of the latent space
 	
