@@ -8,6 +8,9 @@ import pprint
 import dill as pickle
 import copy
 from utilities.mask import Mask
+import core
+print(list(core.__dict__.keys()))
+print(list(os.walk("..")))
 from core.train.manager import DualTrainer
 import core.config as cfg
 import shutil

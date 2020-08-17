@@ -5,6 +5,8 @@ services:
   code:
     build: ./code
     volumes:
-      #- ./experiments:/root/experiments
+      - ./experiments:/root/experiments
       - ./code:/usr/src/app/
       - ./data/:/root/data
+    environment:
+      - COMPVAE_EXPERIMENT_BASEPATH:/root

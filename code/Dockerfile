@@ -6,4 +6,4 @@ COPY . /usr/src/app/
 RUN pip install --upgrade pip
 RUN python3 -m pip install -r /usr/src/app/requirements.txt
 WORKDIR /usr/src/app/
-CMD ["python3", "execute.py"]
+CMD ["python3", "test.py"]

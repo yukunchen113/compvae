@@ -144,7 +144,11 @@ def run_models(parameters=None):
 	if parameters is None:
 		parameters=get_run_parameters()
 
-	base_path = "experiments/shapes3d/multilayer/naive_layer_addition_sm/"
+	if not "COMPVAE_EXPERIMENT_BASEPATH" in os.environ:
+		base_path = os.getcwd()
+	else:
+		base_path=os.environ["COMPVAE_EXPERIMENT_BASEPATH"]
+	base_path = os.path.join(base_path,"experiments/shapes3d/multilayer/naive_layer_addition_sm/")
 	#if os.path.exists(base_path):
 	#	if not "y" in input("do you want to use existing path?"):
 	#		exit()
@@ -155,7 +159,7 @@ def run_models(parameters=None):
 	os.chdir(code_path)
 	base_path = ".."
 
-	parallel_run = ParallelProcess(max_concurrent_procs_per_gpu=8,num_gpu=2)
+	parallel_run = ParallelProcess(max_concurrent_procs_per_gpu=6,num_gpu=2)
 
 	# create experiment path:
 	kwargs_set = mix_parameters(copy.deepcopy(parameters),enumerated=True)
