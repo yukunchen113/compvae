@@ -3,8 +3,7 @@ tf.keras.backend.set_floatx('float32')
 import os
 #os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # used to silence mask warning not being trained
 import matplotlib.pyplot as plt
-from utils import general_tools as gt 
-import utils as ut
+from disentangle.general import tools as gt 
 import numpy as np
 import time
 import shutil

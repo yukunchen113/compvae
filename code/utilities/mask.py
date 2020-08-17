@@ -1,4 +1,4 @@
-import utils as ut
+import disentangle as dt
 import tensorflow as tf 
 import numpy as np 
 import importlib.util
@@ -51,7 +51,7 @@ class Mask:
 		    numpy array: returns output of get_mask, the most recent mask
 		
 		"""
-		if measure_time: timer_func = ut.general_tools.Timer()
+		if measure_time: timer_func = dt.general.tools.Timer()
 		if latent_space_distance is None:
 			latent_space_distance = self.default_latent_space_distance
 
@@ -106,7 +106,7 @@ class Mask:
 	def shape(self):
 		return self.mask.shape
 
-class MaskedTraversal(ut.visualize.Traversal):
+class MaskedTraversal(dt.visualize.Traversal):
 	def __init__(self, *args, pixel_diff_threshold=0.005, **kwargs):
 		super().__init__(*args, **kwargs)
 		self.masked_inputs = None
@@ -202,7 +202,7 @@ def mask_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_vi
 	Returns:
 	    Numpy arr: image
 	"""
-	t = ut.general_tools.Timer()
+	t = dt.general.tools.Timer()
 	traverse = Traversal(model=model, inputs=inputs)
 	#t("Timer Creation")
 	if latent_of_focus is None:

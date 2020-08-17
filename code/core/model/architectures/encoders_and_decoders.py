@@ -1,6 +1,6 @@
-from utils.tf_custom.architectures import base, block
-from utils.tf_custom.architectures.encoder import GaussianEncoder
-from utils.tf_custom.architectures.decoder import Decoder
+from disentangle.architectures import base, block
+from disentangle.architectures.encoder import GaussianEncoder
+from disentangle.architectures.decoder import Decoder
 from . import architecture_params as ap
 import tensorflow as tf
 

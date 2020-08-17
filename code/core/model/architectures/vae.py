@@ -1,7 +1,6 @@
-import utils as ut
-from utils.tf_custom.architectures.vae import BetaTCVAE, BetaVAE, VariationalAutoencoder
-from utils.other_library_tools.disentanglementlib_tools import total_correlation 
-from utils.tf_custom.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
+from disentangle.architectures.vae import BetaTCVAE, BetaVAE, VariationalAutoencoder
+from disentangle.other_library_tools.disentanglementlib_tools import total_correlation 
+from disentangle.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
 from utilities.standard import split_latent_into_layer, set_shape
 from . import architecture_params as ap
 from . import encoders_and_decoders as ead

@@ -7,7 +7,6 @@ import sys
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-import utils as ut
 import imageio
 import shutil
 import execute
