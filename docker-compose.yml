@@ -1,0 +1,10 @@
+version: '3'
+
+# please link your dataset and tf dataset dirctories as well.
+services:
+  code:
+    build: ./code
+    volumes:
+      - ./experiments:/root/experiments
+      - ./code:/usr/src/app/
+      - ./data/:/root/data

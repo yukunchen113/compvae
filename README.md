@@ -1,7 +1,7 @@
 # Needs To Be Updated
 
 ## Setup:
-Requires my library repo, please add that to your PYTHONPATH, such that the utils module can be used.
+Requires my library repo, please pip install disentangle
 ## Pipeline:
 
 Currently using a ProVLAE architecture

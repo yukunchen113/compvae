@@ -1,7 +1,7 @@
 """This file contains default configuration for training a compvae
 """
 import tensorflow as tf
-import utils as ut 
+import disentangle as dt 
 import numpy as np
 from utilities.standard import ConfigMetaClass, ImageMSE, ImageBCE
 from core.train.manager import TrainVAE
@@ -40,8 +40,8 @@ class Config(metaclass=ConfigMetaClass):
 		self.train_status_path = "train_status.npz"
 
 	def _set_dataset(self):
-		self.dataset_manager, self.dataset = ut.dataset.get_celeba_data(
-			ut.general_constants.datapath, 
+		self.dataset_manager, self.dataset = dt.dataset.get_celeba_data(
+			dt.general.constants.datapath, 
 			is_HD=False,
 			group_num=8)
 		self.inputs_test_handle = _get_inputs_test_handles(2, self.dataset_manager)
@@ -57,7 +57,7 @@ class Config(metaclass=ConfigMetaClass):
 		self.random_seed = None
 		self.num_latents = 10
 		self.beta = 30
-		self._get_model = ut.tf_custom.architectures.vae.BetaTCVAE
+		self._get_model = dt.architectures.vae.BetaTCVAE
 		
 	def _set_training(self):
 		self.batch_size = 32
@@ -88,8 +88,8 @@ class Config(metaclass=ConfigMetaClass):
 
 class Config64(Config):
 	def _set_dataset(self):
-		self.dataset_manager, self.dataset = ut.dataset.get_celeba_data(
-			ut.general_constants.datapath, 
+		self.dataset_manager, self.dataset = dt.dataset.get_celeba_data(
+			dt.general.constants.datapath, 
 			is_HD=64,
 			group_num=8)
 		self.inputs_test_handle = _get_inputs_test_handles(2, self.dataset_manager)
@@ -104,8 +104,8 @@ class Config64(Config):
 
 class Config256(Config):
 	def _set_dataset(self):
-		self.dataset_manager, self.dataset = ut.dataset.get_celeba_data(
-			ut.general_constants.datapath, 
+		self.dataset_manager, self.dataset = dt.dataset.get_celeba_data(
+			dt.general.constants.datapath, 
 			is_HD=256,
 			group_num=8)
 		self.inputs_test_handle = _get_inputs_test_handles(2, self.dataset_manager)
@@ -168,7 +168,7 @@ class ConfigShapes3D(Config):
 				return images, labels
 
 			self._dataset_manager = tfds.load('shapes3d',
-			 	data_dir=ut.general_constants.tfds_datapath,
+			 	data_dir=dt.general.constants.tfds_datapath,
 			 	split="train", # this is all split examples for shape3d
 		 		)
 			self._dataset_manager = self._dataset_manager.shuffle(20000)

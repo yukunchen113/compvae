@@ -1,11 +1,11 @@
-import utils as ut
+import disentangle as dt
 import tensorflow as tf 
 import numpy as np 
 import importlib.util
 #################
 # Visualization #
 #################
-class VLAETraversal(ut.visualize.Traversal): #create wrapper for model encoder and decoder
+class VLAETraversal(dt.visualize.Traversal): #create wrapper for model encoder and decoder
 
 	"""
 	TODO:
@@ -59,7 +59,7 @@ def vlae_traversal(model, inputs, min_value=-3, max_value=3, num_steps=30, is_vi
 	Returns:
 	    Numpy arr: image
 	"""
-	t = ut.general_tools.Timer()
+	t = dt.general.tools.Timer()
 	traverse = Traversal(model=model, inputs=inputs)
 	#t("Timer Creation")
 	if latent_of_focus is None:

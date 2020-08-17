@@ -1,8 +1,8 @@
-from utils.other_library_tools.disentanglementlib_tools import gaussian_log_density, total_correlation 
-from utils.tf_custom.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
+from disentangle.other_library_tools.disentanglementlib_tools import gaussian_log_density, total_correlation 
+from disentangle.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # used to silence mask warning not being trained
-import utils as ut
+import disentangle as dt
 import numpy as np
 import pprint
 import dill as pickle
@@ -51,7 +51,7 @@ class ModelHandler:
 		config = self.config
 
 		# define paths and create main directory
-		paths_obj = ut.general_tools.StandardizedPaths(self.base_path)
+		paths_obj = dt.general.tools.StandardizedPaths(self.base_path)
 
 		image_dir_name = "image_dir" # these are the names
 		model_setup_dir_name = "model_setup_dir" # these are the names
@@ -262,7 +262,7 @@ class DualModelHandler():
 		"""
 		# get the paths for the models
 		self.base_path = base_path
-		paths_obj = ut.general_tools.StandardizedPaths(self.base_path)
+		paths_obj = dt.general.tools.StandardizedPaths(self.base_path)
 		self.mask_base_path = paths_obj("mask_model", description="MaskVAE model base path")
 		self.comp_base_path = paths_obj("comp_model", description="ComponentVAE model path")
 

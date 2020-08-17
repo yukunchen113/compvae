@@ -8,6 +8,7 @@ import numpy as np
 import utilities.hp_scheduler as hs
 import shutil
 import dill as pickle
+import sys
 from functools import reduce
 def mix_parameters(params, enumerated=False):
 	if params == {}:
@@ -142,10 +143,10 @@ def run_models(parameters=None):
 	if parameters is None:
 		parameters=get_run_parameters()
 
-	base_path = "experiments/shapes3d/multilayer/hold_tests_sm/"
-	if os.path.exists(base_path):
-		if not "y" in input("do you want to use existing path?"):
-			exit()
+	base_path = os.path.join(os.environ["HOME"],"experiments/shapes3d/multilayer/naive_layer_addition_sm/")
+	#if os.path.exists(base_path):
+	#	if not "y" in input("do you want to use existing path?"):
+	#		exit()
 	
 	# do this to keep snapshot of code to run parallel processes.
 	# we can't parallelize this code with multiprocess because of the pickling so we need to use subprocess and shells
@@ -229,7 +230,7 @@ class ParallelProcess():
 			pickle.dump(kw,f)
 		if envar is None:
 			envar=os.environ.copy()
-		proc=subprocess.Popen(["python3.7","execute.py",path],env=envar)
+		proc=subprocess.Popen(["python%d.%d"%sys.version_info[:2],"execute.py",path],env=envar)
 		return proc
 
 	@classmethod

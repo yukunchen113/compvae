@@ -1,4 +1,4 @@
-import utils as ut
+import disentangle as dt
 import tensorflow as tf 
 import numpy as np 
 import importlib.util
@@ -133,7 +133,7 @@ def set_shape(layer, shape):
 #######################
 # Visualization Utils #
 #######################
-def image_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_visualizable=True, latent_of_focus=None, Traversal=ut.visualize.Traversal, return_traversal_object=False):
+def image_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_visualizable=True, latent_of_focus=None, Traversal=dt.visualize.Traversal, return_traversal_object=False):
 	"""Standard raversal of the latent space
 	
 	Args:
@@ -149,7 +149,7 @@ def image_traversal(model, inputs, min_value=-3, max_value=3, num_steps=15, is_v
 	Returns:
 		Numpy arr: image
 	"""
-	#t = ut.general_tools.Timer()
+	#t = dt.general.tools.Timer()
 	traverse = Traversal(model, inputs)
 	#t("Timer Creation")
 	if latent_of_focus is None:

@@ -3,8 +3,7 @@ tf.keras.backend.set_floatx('float32')
 import os
 #os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # used to silence mask warning not being trained
 import matplotlib.pyplot as plt
-from utils import general_tools as gt 
-import utils as ut
+from disentangle.general import tools as gt 
 import numpy as np
 import time
 import shutil
@@ -23,7 +22,7 @@ class TrainObj(metaclass=TrainObjMetaClass):
 		"""	
 		step = -1
 		if measure_time: 
-			timer_func = ut.general_tools.Timer()
+			timer_func = gt.Timer()
 		else:
 			timer_func = None
 		while 1: # set this using validation
@@ -43,7 +42,7 @@ class TrainVAE(TrainObj):
 		
 		Args:
 			model (tf.keras.Models): VAE model from yukun's library.
-			dataset (ut.dataset object): dataset object
+			dataset (gt.dataset object): dataset object
 			inputs_test (np array): batch of raw images for testing new input data
 			preprocessing (function): processing function on dataset inputs
 			image_dir (string): where the images across training will be stored
