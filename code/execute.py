@@ -8,6 +8,7 @@ import numpy as np
 import utilities.hp_scheduler as hs
 import shutil
 import dill as pickle
+import pathlib
 import sys
 from functools import reduce
 def mix_parameters(params, enumerated=False):
@@ -43,12 +44,12 @@ def run_training(base_path, gpu_num=0, **kw):
 	modhand.save()
 	train_wrapper(modhand.train)
 
-def copy_code(base_path, ignore_folders_contain=["test","exp"]):
+def copy_code(base_path, ignore_folders_contain=["test","exp"],source_dir="."):
 	# copy code files to basepath for preservation of experiments
 	code_path = os.path.join(base_path,cn.code_folder)
 	ignore_folders_contain = ["test","exp"]
 	code_files = []# if i[-1].endswith(".py")]
-	for i in os.walk("."):
+	for i in os.walk(source_dir):
 		for j in i[-1]: 
 			is_valid = True
 			for exc in ignore_folders_contain: 
@@ -59,7 +60,7 @@ def copy_code(base_path, ignore_folders_contain=["test","exp"]):
 				code_files.append(files_set)
 
 	for dirn,file in code_files:
-		dstdir = os.path.join(code_path,dirn)
+		dstdir = os.path.join(code_path,os.path.relpath(dirn,source_dir))
 		if not os.path.exists(dstdir):
 			os.makedirs(dstdir)
 		filepath = os.path.join(dirn,file)
@@ -143,14 +144,14 @@ def run_models(parameters=None):
 	if parameters is None:
 		parameters=get_run_parameters()
 
-	base_path = os.path.join(os.environ["HOME"],"experiments/shapes3d/multilayer/naive_layer_addition_sm/")
+	base_path = "experiments/shapes3d/multilayer/naive_layer_addition_sm/"
 	#if os.path.exists(base_path):
 	#	if not "y" in input("do you want to use existing path?"):
 	#		exit()
 	
 	# do this to keep snapshot of code to run parallel processes.
 	# we can't parallelize this code with multiprocess because of the pickling so we need to use subprocess and shells
-	code_path = copy_code(base_path)
+	code_path = copy_code(base_path, source_dir=os.path.relpath(pathlib.Path(__file__).parent.absolute()))
 	os.chdir(code_path)
 	base_path = ".."
 

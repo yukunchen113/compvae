@@ -1,12 +1,22 @@
-# Needs To Be Updated
-
 ## Setup:
-Requires my library repo, please pip install disentangle
+Requires my library repo, please run
+```bash
+pip install disentangle
+```
 ## Pipeline:
 
 Currently using a ProVLAE architecture
 
-## Folders and Files:
+__Currently, docker does not work__
+
+to execute run:
+```python
+python code/execute.py
+```
+
+
+
+## Code/:
 
 ### run_traversals.py:
 - used to visualize models and run inference
