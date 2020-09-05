@@ -127,7 +127,7 @@ class TrainVAE(TrainObj):
 	def print_step(step):
 		return step%500 == 0
 
-	def train_step(self, step, model_save_steps, total_steps, custom_inputs=None, timer_func=None):
+	def train_step(self, step, model_save_steps, total_steps, custom_inputs=None, timer_func=None, **kw):
 		step+=1
 		inputs = self.preprocess(custom_inputs, measure_time=not timer_func is None)
 		# apply gradient tape
@@ -140,7 +140,9 @@ class TrainVAE(TrainObj):
 		
 
 		if np.isnan(loss.numpy()):
-			print("Nan Loss on step %d"%step)
+			string="Nan Loss on step %d"%step
+			if "log_file" in kw: kw["log_file"].write(string+"\n")
+			print(string)
 			return np.nan
 
 		
@@ -155,11 +157,13 @@ class TrainVAE(TrainObj):
 		#	), "\r", end="")
 		print("step", step, "\r", end="")
 		if self.print_step(step):
-			print('training step %s:\t rec loss = %s\t, reg loss = %s\t' % (
+			string='training step %s:\t rec loss = %s\t, reg loss = %s\t %s' % (
 				step, 
 				self.opt_man.reconstruction_loss.numpy(),
 				self.opt_man.regularization_loss.numpy(),
-				), hparams)
+				str(hparams))
+			if "log_file" in kw: kw["log_file"].write(string+"\n")
+			print(string)
 
 		if self.save_image_step(step):
 			self.save_image(step)
@@ -210,7 +214,7 @@ class DualTrainer(TrainObj):
 		self.mtr_obj.save_image(step)
 		self.ctr_obj.save_image(step)
 
-	def train_step(self, step, model_save_steps, total_steps, timer_func=None):
+	def train_step(self, step, model_save_steps, total_steps, timer_func=None, **kw):
 		step+=1
 		if not timer_func is None: timer_func("Start")
 		# preprocess data

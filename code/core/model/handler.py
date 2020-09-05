@@ -56,6 +56,7 @@ class ModelHandler:
 
 		image_dir_name = "image_dir" # these are the names
 		model_setup_dir_name = "model_setup_dir" # these are the names
+
 		
 		# define model paths 
 		paths_obj.add_path(image_dir_name, config.image_dir,
@@ -114,6 +115,7 @@ class ModelHandler:
 	def train(self):
 		config = self.config
 		train_status_path = os.path.join(self.base_path, config.train_status_path) # model parameters path
+		log_filepath = os.path.join(self.base_path, "log.txt")
 
 		# define training configureation
 		self._configure_train()
@@ -129,10 +131,12 @@ class ModelHandler:
 		for data in config.dataset_manager.batch(config.batch_size):
 			if np.isnan(step):
 				break
-			step = self.training_object.train_step(
-				step=step, model_save_steps=config.model_save_steps, 
-				total_steps=config.total_steps,
-				custom_inputs=data[0])
+			with open(log_filepath,"a") as log_file:
+				step = self.training_object.train_step(
+					step=step, model_save_steps=config.model_save_steps, 
+					total_steps=config.total_steps,
+					custom_inputs=data[0],
+					log_file=log_file)
 
 			if np.isnan(step) or not (step%config.model_save_steps): 
 				np.savez(train_status_path, step=step)

@@ -5,7 +5,7 @@ from collections import OrderedDict
 from utilities.model_multiprocess import train_wrapper, starmap_with_kwargs
 import utilities.constants as cn
 import numpy as np
-import utilities.hp_scheduler as hs
+import utilities.hparams as hp
 import shutil
 import dill as pickle
 import pathlib
@@ -75,11 +75,11 @@ def get_run_parameters():
 	# set parameters #
 	##################
 	parameters = OrderedDict(
-		num_latents = [8,3],
+		num_latents = [8],
 		beta = ["annealed"], # will be overwritten
 		#beta = [400,350,300,250,175,150,125,100],
 		random_seed = [1,5,10], #Using BetaVAE
-		model_size=[0],
+		model_size=[1],
 		)
 	#parameters['hparam_schedule'] = [lambda step: ep.hparam_schedule_alpha_beta(step, 4, final_beta=j) for j in parameters["beta"]]
 	#parameters['hparam_schedule'] = [
@@ -87,53 +87,43 @@ def get_run_parameters():
 	###########################################################
 	# WARNING: hparam_schedule_alpha_beta3 is last layer only #
 	###########################################################
-	num_latent_layers=3
-	class CustomLayerHP3(hs.LayerHP3):
-		#restart descent from start step
-		def check_state(self,step,model):
-			if self.changed_latent_detection(model.past_kld, self.layer_num) and step>=self.start_step:
-				self._start_step=step+self.wait_steps
-			if step<self.hold_step:
-				self.state=1
-			else:
-				self.state=0
+	num_latent_layers=4
 
 	parameters['hparam_schedule'] = [
-		hs.NetworkHP2(
-			num_layers=num_latent_layers, layerhps = [
-			hs.LayerHP3(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=5000, start_step=5000, converge_beta=400),
-			hs.LayerHP3(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=5000, start_step=5000, converge_beta=400),
-			hs.LayerHP3(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=5000, start_step=5000, converge_beta=400),
+		hp.network.GradualCondKLDTrigger(
+			num_layers=num_latent_layers, num_child=2, gp_kw={
+					"duration":2000,"start_val":0,"final_val":0.1,"start_step":5000}, layerhps = [
+				None,
+				None,
+				hp.layers.SpecifiedBetaHold(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=0, 
+					start_step=5000, converge_beta=300, kld_detection_threshold=1),
+				hp.layers.SpecifiedBetaHold(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=0, 
+					start_step=5000, converge_beta=400, kld_detection_threshold=1),
 			]
 		),
-		hs.NetworkHP2(
-			num_layers=num_latent_layers, layerhps = [
-			hs.LayerHP3(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=5000, start_step=5000, converge_beta=300),
-			hs.LayerHP3(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=5000, start_step=5000, converge_beta=300),
-			hs.LayerHP3(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=5000, start_step=5000, converge_beta=300),
+		hp.network.GradualCondKLDTrigger(
+			num_layers=num_latent_layers, num_child=2, gp_kw={
+					"duration":2000,"start_val":0,"final_val":0.1,"start_step":5000}, layerhps = [
+				None,
+				None,
+				hp.layers.SpecifiedBetaHold(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=0, 
+					start_step=5000, converge_beta=200, kld_detection_threshold=1),
+				hp.layers.SpecifiedBetaHold(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=0, 
+					start_step=5000, converge_beta=200, kld_detection_threshold=1),
 			]
 		),
-		hs.NetworkHP2(
-			num_layers=num_latent_layers, layerhps = [
-			CustomLayerHP3(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=5000, start_step=5000, converge_beta=300),
-			CustomLayerHP3(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=5000, start_step=5000, converge_beta=300),
-			CustomLayerHP3(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=5000, start_step=5000, converge_beta=300),
+		hp.network.GradualCondKLDTrigger(
+			num_layers=num_latent_layers, num_child=2, gp_kw={
+					"duration":2000,"start_val":0,"final_val":0.25,"start_step":5000}, layerhps = [
+				None,
+				None,
+				hp.layers.SpecifiedBetaHold(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=0, 
+					start_step=5000, converge_beta=200, kld_detection_threshold=1),
+				hp.layers.SpecifiedBetaHold(beta_anneal_duration=30000, start_beta=80, final_beta=8,wait_steps=0, 
+					start_step=5000, converge_beta=200, kld_detection_threshold=1),
 			]
 		),
-		hs.NetworkHP2(
-			num_layers=num_latent_layers, layerhps = [
-			hs.LayerHP2(beta_anneal_duration=30000, start_beta=175, final_beta=8,wait_steps=5000, start_step=5000),
-			hs.LayerHP2(beta_anneal_duration=30000, start_beta=175, final_beta=8,wait_steps=5000, start_step=5000),
-			hs.LayerHP2(beta_anneal_duration=30000, start_beta=175, final_beta=8,wait_steps=5000, start_step=5000),
-			]
-		),
-		hs.NetworkHP2(
-			num_layers=num_latent_layers, layerhps = [
-			hs.LayerHP(beta_anneal_duration=30000, start_beta=175, final_beta=8,wait_steps=5000, start_step=5000),
-			hs.LayerHP(beta_anneal_duration=30000, start_beta=175, final_beta=8,wait_steps=5000, start_step=5000),
-			hs.LayerHP(beta_anneal_duration=30000, start_beta=175, final_beta=8,wait_steps=5000, start_step=5000),
-			]
-		),		
+
 	]
 
 	return parameters
@@ -148,10 +138,12 @@ def run_models(parameters=None):
 		base_path = os.getcwd()
 	else:
 		base_path=os.environ["COMPVAE_EXPERIMENT_BASEPATH"]
-	base_path = os.path.join(base_path,"experiments/shapes3d/multilayer/naive_layer_addition_sm/")
-	#if os.path.exists(base_path):
-	#	if not "y" in input("do you want to use existing path?"):
-	#		exit()
+	base_path = os.path.join(base_path,"experiments/shapes3d/multilayer/conditioning_gradual_lg2/")
+	parallel_run = ParallelProcess(max_concurrent_procs_per_gpu=1,num_gpu=2)
+	
+	if os.path.exists(base_path):
+		if not "y" in input("do you want to use existing path?"):
+			exit()
 	
 	# do this to keep snapshot of code to run parallel processes.
 	# we can't parallelize this code with multiprocess because of the pickling so we need to use subprocess and shells
@@ -159,7 +151,6 @@ def run_models(parameters=None):
 	os.chdir(code_path)
 	base_path = ".."
 
-	parallel_run = ParallelProcess(max_concurrent_procs_per_gpu=6,num_gpu=2)
 
 	# create experiment path:
 	kwargs_set = mix_parameters(copy.deepcopy(parameters),enumerated=True)
