@@ -53,6 +53,36 @@ class GPUMemoryUsageMonitor:
 #################
 # Regular Utils #
 #################
+class cprint: # color codes from https://stackoverflow.com/questions/287871/how-to-print-colored-text-in-python
+	HEADER = '\033[95m'
+	BLUE = '\033[94m'
+	GREEN = '\033[92m'
+	WARNING = '\033[93m'
+	FAIL = '\033[91m'
+	ENDC = '\033[0m'
+	BOLD = '\033[1m'
+	UNDERLINE = '\033[4m'
+	@classmethod
+	def header(cls, *ar,**kw):
+		print(cls.HEADER, *ar, cls.ENDC, **kw)
+	@classmethod
+	def blue(cls, *ar,**kw):
+		print(cls.BLUE, *ar, cls.ENDC, **kw)
+	@classmethod
+	def green(cls, *ar,**kw):
+		print(cls.GREEN, *ar, cls.ENDC, **kw)
+	@classmethod
+	def warning(cls, *ar,**kw):
+		print(cls.WARNING, *ar, cls.ENDC, **kw)
+	@classmethod
+	def fail(cls, *ar,**kw):
+		print(cls.FAIL, *ar, cls.ENDC, **kw)
+	@classmethod
+	def bold(cls, *ar,**kw):
+		print(cls.BOLD, *ar, cls.ENDC, **kw)	
+	@classmethod
+	def underline(cls, *ar,**kw):
+		print(cls.UNDERLINE, *ar, cls.ENDC, **kw)
 
 def import_given_path(name, path):
 	spec = importlib.util.spec_from_file_location(name, path)

@@ -35,7 +35,8 @@ class VLAETraversal(dt.visualize.Traversal): #create wrapper for model encoder a
 	@property
 	def samples_list(self):
 		s = self.samples.shape
-		samples = self.samples.reshape(s[0],-1,np.sum(self.latent_hierarchy),*s[2:])
+		new_shape = (s[0],-1,np.sum(self.latent_hierarchy),*s[2:])
+		samples = self.samples.reshape(new_shape)
 		samples = np.split(samples, np.cumsum(self.latent_hierarchy)[:-1], axis=2)
 		self.inputs = np.broadcast_to(np.expand_dims(self.orig_inputs,1), samples[0].shape)
 		self.inputs = self.inputs.reshape(self.inputs.shape[0],-1, *self.inputs.shape[-3:])

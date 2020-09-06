@@ -239,7 +239,7 @@ class ProVLAE(ProVLAEBase):
 	def past_kld(self):
 		return self._past_kld
 
-	def call(self, inputs, alpha=None, beta=None):
+	def call(self, inputs, alpha=None, beta=None, **kw):
 		# alpha is list of size num latent_space
 		#called during each training step and inference
 		#TBD: run latent space and next layer in parallel
@@ -250,12 +250,12 @@ class ProVLAE(ProVLAEBase):
 		self.latent_space = self.encoder(inputs)
 		reconstruction = self.decoder([i[0] for i in self.latent_space])
 		# get reconstruction and regularization loss
-		for losses in self.provlae_regularizer(self.latent_space, self.alpha, beta):
+		for losses in self.provlae_regularizer(self.latent_space, self.alpha, beta, **kw):
 			self.add_loss(losses)
 
 		return reconstruction
 
-	def provlae_regularizer(self, latent_space, alpha, beta, routing={}):
+	def provlae_regularizer(self, latent_space, alpha, beta, routing={}, **kw):
 		"""Regularizer for latent space
 		
 		Args:
@@ -318,13 +318,15 @@ class ProVLAE(ProVLAEBase):
 				pln,pen=k#prior latent layer number, and prior element number
 				_,m,lv=latent_space[pln]#get the mean and logvar for this latent space
 				beta_divisors[cond_elements]+=1
+				prior_mean = m[:,pen] if len(v)<=2 else m[:,pen]*v[2] # m*gamma +(1-gamma)*0
+				prior_logvar = lv[:,pen] if len(v)<=2 else lv[:,pen]*v[2] # lv*gamma +(1-gamma)*0
 				mean=tf.where(
 					np.isin(np.arange(ls_shape[-1]),cond_elements).astype(bool).reshape(1,-1), # masking for conditioned elements
-					tf.broadcast_to(tf.expand_dims(m[:,pen],axis=-1),ls_shape), # latent prior
+					tf.broadcast_to(tf.expand_dims(prior_mean,axis=-1),ls_shape), # latent prior
 					tf.zeros(ls_shape)) # normal gaussian prior
 				logvar=tf.where(
 					np.isin(np.arange(ls_shape[-1]),cond_elements).astype(bool).reshape(1,-1), # masking for conditioned elements
-					tf.broadcast_to(tf.expand_dims(lv[:,pen],axis=-1),ls_shape), # latent prior
+					tf.broadcast_to(tf.expand_dims(prior_logvar,axis=-1),ls_shape), # latent prior
 					tf.zeros(ls_shape)) # normal gaussian prior
 				layer_reg.append((mean,logvar))
 

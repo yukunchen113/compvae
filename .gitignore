@@ -4,3 +4,4 @@ test*
 todolist.md
 .idea/
 data/
+.pytest_cache
