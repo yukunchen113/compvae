@@ -52,7 +52,12 @@ class SingleLayer:
 
 	@property
 	def activated_layers(self):
-		return np.abs(np.asarray(self.past_hp["alpha"])-1)<1e-8
+		return self.get_activated_layers()
+
+	def get_activated_layers(self,hp=None):
+		if hp is None:
+			hp = self.past_hp
+		return np.abs(np.asarray(hp["alpha"])-1)<1e-8
 	
 	def get_layer_params(self, step, model,**kw):
 		hp={}
@@ -89,9 +94,11 @@ class StepTrigger(SingleLayer):
 			for k,v in self.alpha_hp.items():
 				alpha[k]=v(step)
 		return alpha
-	@property
-	def activated_layers(self):
-		return np.abs(np.asarray(self.past_hp["alpha"])-self.alpha_kw["final_val"])<1e-8
+
+	def get_activated_layers(self,hp=None):
+		if hp is None:
+			hp = self.past_hp
+		return np.abs(np.asarray(hp["alpha"])-self.alpha_kw["final_val"])<1e-8
 
 class StepTriggerReverse(StepTrigger):
 	# use lowest expressive layer first.
@@ -174,6 +181,18 @@ class CondKLDTrigger(KLDTrigger):
 							routing[k]=[i-1,available_latents[:self.num_child]]
 							available_latents = available_latents[self.num_child:]
 		return routing
+
+class CondKLDTriggerLayerMask(CondKLDTrigger):
+	def get_network_params(self, step, model, **kw):
+		hp=super().get_network_params(step, model, **kw)
+		hp["latent_mask"]=self.get_latent_mask(hp,**kw)
+
+	def get_latent_mask(self,hp,**kw):
+		# make across each latents, dependent on routing.
+		# goes through routing and masks the specified latents
+		#routing: {(prior layer num, prior element num):[layer num, [conditioned elements]]}
+		for k,v in hp["routing"].items():
+			pass
 
 class GradualCondKLDTrigger(CondKLDTrigger):
 	def __init__(self, *ar, gp_kw={"duration":5000,"start_val":0,"final_val":0.75,"start_step":2000}, **kw):

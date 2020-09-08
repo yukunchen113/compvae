@@ -239,7 +239,7 @@ class ProVLAE(ProVLAEBase):
 	def past_kld(self):
 		return self._past_kld
 
-	def call(self, inputs, alpha=None, beta=None, **kw):
+	def call(self, inputs, alpha=None, beta=None, latent_mask=None, **kw):
 		# alpha is list of size num latent_space
 		#called during each training step and inference
 		#TBD: run latent space and next layer in parallel
@@ -248,12 +248,25 @@ class ProVLAE(ProVLAEBase):
 			beta = [self.beta]*len(self.alpha)
 
 		self.latent_space = self.encoder(inputs)
+		if not latent_mask is None:
+			self.latent_space = self.apply_latent_mask(self.latent_space, latent_mask)
 		reconstruction = self.decoder([i[0] for i in self.latent_space])
 		# get reconstruction and regularization loss
 		for losses in self.provlae_regularizer(self.latent_space, self.alpha, beta, **kw):
 			self.add_loss(losses)
-
 		return reconstruction
+
+	def apply_latent_mask(self, latent_space, mask):
+		new_ls=[]
+		for ls, ma in zip(latent_space, mask):
+			s,m,lv = ls
+			# where mask is true, make mean and logvar = 0 and then resample for s.
+			ma = tf.broadcast_to(np.logical_not(np.asarray(ma).reshape(1,-1)).astype(float), m.shape)
+			m=m*ma
+			lv=lv*ma
+			s=tf.where(ma,s,tf.exp(0.5*lv)*tf.random.normal(tf.shape(lv))+m) # resample from where was masked with 0
+			new_ls.append((s,m,lv))
+		return new_ls
 
 	def provlae_regularizer(self, latent_space, alpha, beta, routing={}, **kw):
 		"""Regularizer for latent space
@@ -337,7 +350,6 @@ class ProVLAE(ProVLAEBase):
 			layer_reg.append(beta_divisors)
 			network_reg.append(layer_reg)
 		return network_reg
-
 
 	def regularizer(self, sample, mean, logvar, cond_mean=None, cond_logvar=None, beta=None, *,return_past_kld=False):
 		# regularization uses disentanglementlib method
