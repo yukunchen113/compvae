@@ -38,6 +38,7 @@ class Config(metaclass=ConfigMetaClass):
 		self.model_save_file = "model_weights.h5" # model weights save file
 		self.model_parameters_path = "model_parameters.txt"
 		self.train_status_path = "train_status.npz"
+		self.variable_monitor_csv = "log.csv"
 
 	def _set_dataset(self):
 		self.dataset_manager, self.dataset = dt.dataset.get_celeba_data(
@@ -126,7 +127,7 @@ class Config256(Config):
 			inputs = tf.image.resize(inputs, final_image_size)
 		return super().preprocessing(inputs, image_crop_size, final_image_size)
 
-class TFDSShapes3DWrapper():
+class TFDSWrapper():
 	def __init__(self, dataset_manager):
 		self.dataset_manager = dataset_manager
 
@@ -141,7 +142,7 @@ class TFDSShapes3DWrapper():
 		self.dataset_manager = self.dataset_manager.batch(batch_size, drop_remainder=True)
 		return self
 
-class ConfigShapes3D(Config):
+class ConfigTFDS(Config):
 	"""Config used to train shapes3d
 	"""
 	def _set_dataset(self):
@@ -155,9 +156,31 @@ class ConfigShapes3D(Config):
 	
 	@property
 	def dataset(self):
-		self._dataset = TFDSShapes3DWrapper(self.dataset_manager)
+		self._dataset = TFDSWrapper(self.dataset_manager)
 		return self._dataset
 
+	@property
+	def dataset_manager(self):
+		raise Exception("Config Undefined")
+
+	@property
+	def inputs_test(self):
+		# do not store inputs test data to minimize pickle size
+		# assumes that dataset function will not change
+		if self._inputs_test is None:
+			self._inputs_test, _ = self.dataset(32)
+		return self._inputs_test
+	
+	def preprocessing(self, inputs, *ar, **kw):
+		return tf.image.convert_image_dtype(inputs, tf.float32)
+
+	def _set_training(self):
+		super()._set_training()
+		self.batch_size = 100
+		#self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.00005)
+
+
+class ConfigShapes3D(ConfigTFDS):
 	@property
 	def dataset_manager(self):
 		if self._dataset_manager is None:
@@ -181,18 +204,3 @@ class ConfigShapes3D(Config):
 
 		return self._dataset_manager
 
-	@property
-	def inputs_test(self):
-		# do not store inputs test data to minimize pickle size
-		# assumes that dataset function will not change
-		if self._inputs_test is None:
-			self._inputs_test, _ = self.dataset(32)
-		return self._inputs_test
-	
-	def preprocessing(self, inputs, *ar, **kw):
-		return tf.image.convert_image_dtype(inputs, tf.float32)
-
-	def _set_training(self):
-		super()._set_training()
-		self.batch_size = 100
-		#self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.00005)

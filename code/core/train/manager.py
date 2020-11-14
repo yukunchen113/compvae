@@ -10,6 +10,7 @@ import shutil
 from utilities.standard import image_traversal, kld_loss_reduction, ImageMSE, GPUMemoryUsageMonitor, TrainObjMetaClass
 from utilities.mask import mask_traversal
 from utilities.vlae_method import vlae_traversal
+from utilities.lvae_method import lvae_traversal
 from functools import reduce
 from .optimizer import OptimizerManager, CondOptimizerManager
 
@@ -120,12 +121,13 @@ class TrainVAE(TrainObj):
 
 	@staticmethod
 	def save_image_step(step):
-		steps = [500, 1000]#[1,2,3,5,7,10,15,20,30,40,75,100,200,300,500,700,1000,1500,2500]
-		return step in steps or step%2500 == 0
+		steps = [1,2,5,10,100,500,1000]#[1,2,3,5,7,10,15,20,30,40,75,100,200,300,500,700,1000,1500,2500]
+		return step in steps or step%1000 == 0
 	
 	@staticmethod
 	def print_step(step):
-		return step%500 == 0
+		steps = [1,2,5,10,100]#[1,2,3,5,7,10,15,20,30,40,75,100,200,300,500,700,1000,1500,2500]
+		return step in steps or step%500 == 0
 
 	def train_step(self, step, model_save_steps, total_steps, custom_inputs=None, timer_func=None, **kw):
 		step+=1
@@ -140,22 +142,25 @@ class TrainVAE(TrainObj):
 		
 
 		if np.isnan(loss.numpy()):
-			string="Nan Loss on step %d"%step
+			string="Nan Loss on step %s:\t rec loss = %s\t, reg loss = %s\t" % (
+				step, 
+				self.opt_man.reconstruction_loss.numpy(),
+				self.opt_man.regularization_loss.numpy(),
+				)
 			if "log_file" in kw: kw["log_file"].write(string+"\n")
 			print(string)
 			return np.nan
 
 		
-
 		self.opt_man.run_optimizer(tape, loss)
 		if not timer_func is None: timer_func("applied gradients")
 
-		#print('step %s:\t rec loss = %s\t, reg loss = %s\t' % (
-		#	step, 
-		#	self.opt_man.reconstruction_loss.numpy(),
-		#	self.opt_man.regularization_loss.numpy(),
-		#	), "\r", end="")
-		print("step", step, "\r", end="")
+		print('\033[Kstep %s:\t rec loss = %s\t, reg loss = %s\t' % (
+			step, 
+			self.opt_man.reconstruction_loss.numpy(),
+			self.opt_man.regularization_loss.numpy(),
+			), "\r", end="")
+		#print("step", step, "\r", end="")
 		if self.print_step(step):
 			string='training step %s:\t rec loss = %s\t, reg loss = %s\t %s' % (
 				step, 
@@ -163,7 +168,7 @@ class TrainVAE(TrainObj):
 				self.opt_man.regularization_loss.numpy(),
 				str(hparams))
 			if "log_file" in kw: kw["log_file"].write(string+"\n")
-			print(string)
+			print("\033[K"+string)
 
 		if self.save_image_step(step):
 			self.save_image(step)
@@ -190,12 +195,30 @@ class TrainProVLAE(TrainVAE):
 			min_value=-3, 
 			max_value=3, 
 			num_steps=30, 
-			return_traversal_object=True)
+			return_traversal_object=True,
+			hparam_obj=self.hparam_schedule)
 		t_im.save_gif(os.path.join(self.image_dir, "%d.gif"%step))
 
 	def train_step(self, *ar, **kw):
 		return super().train_step(*ar, **kw)
 
+class TrainLVAE(TrainVAE):
+	def __init__(self,*ar,is_sample=False,**kw):
+		super().__init__(*ar,**kw)
+		self.is_sample = is_sample
+	def save_image(self, step):
+		t_im = lvae_traversal(
+			self.model,
+			self.preprocess(inputs=self.inputs_test[self.image_visualize]),
+			min_value=-3, 
+			max_value=3, 
+			num_steps=30, 
+			return_traversal_object=True,
+			hparam_obj=self.hparam_schedule,
+			is_sample = self.is_sample)
+		t_im.save_gif(os.path.join(self.image_dir, "%d.gif"%step))
+	def train_step(self, *ar, **kw):
+		return super().train_step(*ar, **kw)
 
 class DualTrainer(TrainObj):
 	def __init__(self, mask_train_obj, cond_train_obj, dataset, inputs_test):

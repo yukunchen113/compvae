@@ -119,6 +119,8 @@ class Compare:
 		if not len(a) == len(b): 
 			return False
 		for k in a.keys():
+			if not k in a: return False
+		for k in a.keys():
 			if not cls.type(a[k],b[k]): return False
 		return True
 

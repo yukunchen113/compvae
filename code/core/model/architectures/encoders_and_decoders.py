@@ -4,7 +4,7 @@ from disentangle.architectures.decoder import Decoder
 from . import architecture_params as ap
 import tensorflow as tf
 
-class ProVLAEGaussianEncoder(GaussianEncoder):
+class LadderGaussianEncoder(GaussianEncoder):
 	@classmethod
 	def get_available_layer_types(cls):
 		pool = base.AveragePooling2D
@@ -34,7 +34,7 @@ class ProVLAEGaussianEncoder(GaussianEncoder):
 
 		return [pool, batch_norm, conv2d_obj, dense_obj, resnet_obj, conv2d_opt_obj, dense_opt_obj, resnet_opt_obj, flatten, networkblock_obj, networkblock_opt_obj]
 
-class ProVLAEGaussianEncoder64(ProVLAEGaussianEncoder):
+class LadderGaussianEncoder64(LadderGaussianEncoder):
 	def __init__(self, num_latents, activation=None, layer_param=None, **kwargs):
 		"""
 		Args:
@@ -49,7 +49,7 @@ class ProVLAEGaussianEncoder64(ProVLAEGaussianEncoder):
 			activation=activation, 
 			**kwargs)
 	
-class ProVLAEDecoder(Decoder):
+class LadderDecoder(Decoder):
 	@classmethod
 	def get_available_layer_types(cls):
 		# same as network.DeconvolutionalNeuralNetwork get_available_layer_types here:
@@ -81,7 +81,7 @@ class ProVLAEDecoder(Decoder):
 
 		return [upscale, batch_norm, conv2dtranspose_obj, dense_obj, resnet_obj, networkblock_obj, networkblock_opt_obj, conv2dtranspose_opt_obj, dense_opt_obj, resnet_opt_obj, reshape]
 
-class ProVLAEDecoder64(ProVLAEDecoder):
+class LadderDecoder64(LadderDecoder):
 	def __init__(self, num_latents, activation=None, layer_param=None, **kwargs):
 		"""Decoder network for 64x64x3 images,
 		used for to setup provlae
@@ -98,7 +98,7 @@ class ProVLAEDecoder64(ProVLAEDecoder):
 			is_create_sequential=False, # don't create sequential as we shouldn't build just yet - we need to redefine the layers.
 			**kwargs)	
 	
-class ProVLAEGaussianEncoderLarge64(ProVLAEGaussianEncoder64):
+class LadderGaussianEncoderLarge64(LadderGaussianEncoder64):
 	def __init__(self, num_latents=7, activation=None, **kwargs):
 		"""This is a gaussian encoder that takes in 64x64x3 images
 		This is the architecture used in ProVLAE literature for CelebA
@@ -113,7 +113,7 @@ class ProVLAEGaussianEncoderLarge64(ProVLAEGaussianEncoder64):
 			layer_param=ap.vlae_encoder_layer_param_large64,
 			**kwargs)
 
-class ProVLAEDecoderLarge64(ProVLAEDecoder64):
+class LadderDecoderLarge64(LadderDecoder64):
 	def __init__(self, num_latents=7, activation=None, **kwargs):
 		"""Decoder network for 64x64x3 images
 		This is the architecture used in ProVLAE literature for CelebA
@@ -127,7 +127,7 @@ class ProVLAEDecoderLarge64(ProVLAEDecoder64):
 			layer_param=ap.vlae_decoder_layer_param_large64, 
 			**kwargs)
 
-class ProVLAEGaussianEncoderSmall64(ProVLAEGaussianEncoder64):
+class LadderGaussianEncoderSmall64(LadderGaussianEncoder64):
 	def __init__(self, num_latents=4, activation=None, **kwargs):
 		"""This is a gaussian encoder that takes in 64x64x3 images
 		This is the architecture used in ProVLAE literature for Shapes3D and dsprites
@@ -144,7 +144,7 @@ class ProVLAEGaussianEncoderSmall64(ProVLAEGaussianEncoder64):
 			layer_param=ap.vlae_encoder_layer_param_small64,
 			**kwargs)
 
-class ProVLAEDecoderSmall64(ProVLAEDecoder64):
+class LadderDecoderSmall64(LadderDecoder64):
 	def __init__(self, num_latents=4, activation=None, **kwargs):
 		"""Decoder network for 64x64x3 images
 		This is the architecture used in ProVLAE literature for Shapes3D

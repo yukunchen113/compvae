@@ -16,18 +16,29 @@ class LinearChange:
 		return (self.start_val-self.final_val)*(
 			1-np.clip((step-self.start_step)/self.duration, 0, 1))+self.final_val
 
+class NoOp:
+	def __init__(self,**kw):
+		self.kw = kw
+	def __call__(self,*ar,**kw):
+		return self.kw
 
 class BaseBetaKLDDetection:
 	def __init__(self,kld_detection_threshold=1,**kw):
 		self.kld_detection_threshold = kld_detection_threshold
 		self.kld_breakout = None
 		self._layer_num=None
-	
+		self.kld=None
+	@property	
+	def num_latents(self):
+		if self.kld_breakout is None:
+			return None
+		return len(self.kld_breakout)
+
 	def get_kld_breakout(self, kld):
 		if kld is None: return None
 		kld=list(kld)[self.layer_num]
-		kld = np.mean(np.abs(kld),axis=0)
-		kld_breakout = kld>self.kld_detection_threshold
+		self.kld = np.mean(np.abs(kld),axis=0)
+		kld_breakout = self.kld>self.kld_detection_threshold
 		return kld_breakout
 
 	def changed_latent_detection(self, kld, is_set=False):
