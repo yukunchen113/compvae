@@ -3,9 +3,9 @@ import tensorflow as tf
 import numpy as np 
 import importlib.util
 from functools import reduce
-###########################
-# Config and Setup  Utils #
-###########################
+##########################
+# Config and Setup Utils #
+##########################
 def import_given_path(name, path):
 	spec = importlib.util.spec_from_file_location(name, path)
 	mod = importlib.util.module_from_spec(spec)
@@ -89,6 +89,47 @@ def import_given_path(name, path):
 	mod = importlib.util.module_from_spec(spec)
 	spec.loader.exec_module(mod)
 	return mod
+
+class Compare:
+	@classmethod
+	def num(cls,a,b):
+		if np.all(abs(a - b)<1e-8):
+			return True
+		return False
+
+	@classmethod	
+	def type(cls,i,j):
+		j = type(i)(j)
+		if type(i) == dict:
+			if not cls.dictionary(i,j):
+				cprint.fail("check_dictionary", i, j)
+				return False
+		elif type(i) in [list, tuple]:
+			if not cls.list(i,j):
+				cprint.fail("check_list", i, j)
+				return False
+		else:
+			if not cls.num(i,j):
+				cprint.fail("check_num", i, j)
+				return False
+		return True
+
+	@classmethod	
+	def dictionary(cls,a,b):
+		if not len(a) == len(b): 
+			return False
+		for k in a.keys():
+			if not k in a: return False
+		for k in a.keys():
+			if not cls.type(a[k],b[k]): return False
+		return True
+
+	@classmethod	
+	def list(cls,a, b):
+		if not len(a) == len(b): return False
+		for i,j in zip(a,b):
+			if not cls.type(i,j): return False
+		return True
 
 
 #######################

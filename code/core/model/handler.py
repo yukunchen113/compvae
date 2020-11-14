@@ -71,6 +71,7 @@ class ModelHandler:
 		# create save files
 		self.model_save_file = os.path.join(self.model_setup_dir, config.model_save_file) # model weights
 		self.model_parameters_path = os.path.join(self.base_path, config.model_parameters_path) # model parameters path
+		self.variable_monitor_csv = os.path.join(self.base_path, config.variable_monitor_csv) # tensorboard log dir
 
 	def create_model(self, load_prev=True):
 		config = self.config
@@ -111,7 +112,7 @@ class ModelHandler:
 			**kwargs
 			)
 		return self.training_object
-		
+	
 	def train(self):
 		config = self.config
 		train_status_path = os.path.join(self.base_path, config.train_status_path) # model parameters path
@@ -141,6 +142,16 @@ class ModelHandler:
 			if np.isnan(step) or not (step%config.model_save_steps): 
 				np.savez(train_status_path, step=step)
 				self.save()
+
+			# tb log
+			# name, layer, data...
+			# 	- layer could be nan if applied to all
+			if step%10:
+				if hasattr(self.config, "hparam_schedule"): 
+					with open(self.variable_monitor_csv, "a") as f:
+						for i, lhp in enumerate(self.config.hparam_schedule.layerhps):
+							if hasattr(lhp,"kld") and not lhp.kld is None:
+								f.write(f"kld,{i},"+",".join([str(i) for i in lhp.kld])+"\n")
 
 		print("finished beta",config.beta)
 
@@ -205,8 +216,35 @@ class ModelHandler:
 		with open(self.config_path, "wb") as f:
 			pickle.dump([self._config, process_save], f)
 
+class LadderModelHandler(ModelHandler):
+	def __init__(self, *args, config_processing=None, **kwargs):
+		if config_processing is None:
+			config_processing = cfg.addition.make_lvae_large
+		super().__init__(*args, config_processing=config_processing, **kwargs)
 
-class ProVLAEModelHandler(ModelHandler):
+	def create_model(self, load_prev=True):
+		config = self.config
+		tf.random.set_seed(config.random_seed)
+		self.model = config.get_model(
+			num_latents=config.num_latents)
+
+		if load_prev and os.path.exists(self.model_save_file):
+			print("found existing model weights. Loading...")
+			self.model.load_weights(self.model_save_file)
+			print("Done")
+
+	def config_connect(self,config):
+		if hasattr(self._config, "hparam_schedule"): config.hparam_schedule = self._config.hparam_schedule
+		return config
+
+	def _configure_train(self, *args, hparam_schedule=None, **kwargs):
+		if hparam_schedule is None:
+			if hasattr(self.config, "hparam_schedule"): hparam_schedule = self.config.hparam_schedule
+			if hasattr(self.config, "is_sample"): is_sample = self.config.is_sample
+		return super()._configure_train(*args, hparam_schedule=hparam_schedule, is_sample=is_sample, **kwargs)
+	
+
+class ProVLAEModelHandler(LadderModelHandler):
 	def __init__(self, *args, config_processing=None, **kwargs):
 		if config_processing is None:
 			config_processing = cfg.addition.make_vlae_large
@@ -226,15 +264,6 @@ class ProVLAEModelHandler(ModelHandler):
 			self.model.load_weights(self.model_save_file)
 			print("Done")
 
-	def config_connect(self,config):
-		config.hparam_schedule = self._config.hparam_schedule
-		return config
-
-	def _configure_train(self, *args, hparam_schedule=None, **kwargs):
-		if hparam_schedule is None:
-			hparam_schedule = self.config.hparam_schedule
-		return super()._configure_train(*args, hparam_schedule=hparam_schedule, **kwargs)
-	
 
 
 class DualModelHandler():
