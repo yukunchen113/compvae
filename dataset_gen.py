@@ -204,7 +204,6 @@ def plot_joint_shape():
 	p.add_mesh(mesh, color="fff000")
 	p.show()
 
-from disentangle.general.tools import Timer
 import matplotlib.pyplot as plt
 def plot_scene():
 	pyramid = Pyramid()
@@ -227,10 +226,7 @@ def plot_scene():
 	# randomized batch
 	batch = Batch(pyramid, set_kw=dict(shape=1), prefetch=0)
 	batch.batch(100)
-	timerobj = Timer()
-	timerobj("Start")
 	images, labels = batch()
-	timerobj("Finished")
 	
 	# image
 	plt.imshow(images[0])
