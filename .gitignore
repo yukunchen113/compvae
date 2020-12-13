@@ -1,6 +1,6 @@
-exp*
+experiments/
 __pycache__/
-test*
+dev*
 todolist.md
 .idea/
 data/
