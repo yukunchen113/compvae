@@ -5,7 +5,7 @@ import tensorflow as tf
 import disentangle as dt 
 import numpy as np
 import tensorflow_datasets as tfds
-
+import hiershapes as hs
 
 #limit GPU usage (from tensiorflow code)
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -25,6 +25,9 @@ class _Base:
 	def train(self, batch_size):
 		return self.dataset_manager.batch(batch_size)
 
+##########################
+# Observational Datasets #
+##########################
 class CelebA(_Base):
 	"""
 	CelebA
@@ -131,12 +134,14 @@ class _TFDSBase(_Base):
 	def dataset_manager(self):
 		raise Exception("Config Undefined")
 
-	def test(self):
+	def test(self, batch_size=None, return_labels=False):
 		# do not store inputs test data to minimize pickle size
 		# assumes that dataset function will not change
 		# TBD: make input test size parameterizable
-		if self._test is None:
-			self._test, _ = self.dataset(32)
+		if self._test is None or not batch_size is None:
+			if batch_size is None: batch_size = 32
+			self._test, labels = self.dataset(batch_size)
+		if return_labels: return self._test, labels
 		return self._test
 	
 	def preprocess(self, inputs, *ar, **kw):
@@ -170,3 +175,141 @@ class Shapes3D(_TFDSBase):
 			self._dataset_manager = self._dataset.dataset_manager
 
 		return self._dataset_manager
+
+#######################
+# Generative Datasets #
+#######################
+class HierShapesBase(_Base):
+	def __init__(self, use_server=True, use_pool=True, run_once=False, num_proc=20, prefetch=20, pool_size=10, port=None):
+		self.use_server = use_server
+		self.port = port
+		if use_server: assert use_pool, "if using server, must be with pool"
+		self.num_proc=num_proc
+		assert prefetch>=num_proc, "prefetch must greater than num_proc"
+		self.prefetch=prefetch
+		self.pool_size=pool_size
+		self.use_pool = use_pool
+		self.run_once = run_once
+		self.test_labels = None
+		self.test_images = None
+		self.server = None
+		self.dataset_manager = self.start_server()
+
+	def test(self, batch_size=None, return_labels=False):
+		if self.test_labels is None or not batch_size is None:
+			if batch_size is None: batch_size = 64
+			self.test_images,self.test_labels = self.dataset_manager.get_batch(batch_size)
+		else:
+			self.test_images = self.dataset_manager.get_images(self.test_labels)
+		if return_labels: return self.test_images, self.test_labels
+		return self.test_images
+	
+	def preprocess(self, inputs, *ar, **kw):
+		return tf.image.convert_image_dtype(inputs, tf.float32)
+	
+	def start_server(self):
+		# Server #
+		scene, parameters = self.get_scene_parameters()
+		if self.use_server:
+			self.server = hs.dataset.ServerClient(scene=scene, randomize_parameters_func=parameters, 
+				num_proc=self.num_proc, prefetch=self.prefetch, pool_size=self.pool_size, port=self.port, retrieval_batch_size=100)
+			client = self.server()
+		elif self.use_pool:
+			client = hs.dataset.ParallelBatch(scene=scene, randomize_parameters_func=parameters, 
+				num_proc=self.num_proc, prefetch=self.prefetch, pool_size=self.pool_size,retrieval_batch_size=100)
+		else:
+			client = hs.dataset.MultiProcessBatch(scene=scene, randomize_parameters_func=parameters, 
+				num_proc=self.num_proc, prefetch=self.prefetch, run_once=self.run_once)
+		return client
+
+	def close(self, is_terminate_server=False):
+		self.dataset_manager.close()
+		if is_terminate_server and not self.server is None: self.server.close() 
+
+	def __getstate__(self):
+		d = dict(self.__dict__)
+		d["test_images"] = None
+		d["server"] = None
+		return d
+
+class HierShapesBoxhead(HierShapesBase):
+	def get_scene_parameters(self, default_params={}, is_filter_val=True):
+		# get_intermediate_values must be false when generating factors
+		
+		adjustable_parameters = ["color","scale","eye_color","azimuth","_overall_eye_color","_wall_color","_floor_color"]
+		for k in default_params.keys(): assert k in adjustable_parameters, f"{k} not in adjustable_parameters: {adjustable_parameters}" 
+		#boxhead = hs.scene.BoxHead(eyes=[0])
+		boxhead = hs.scene.BoxHeadCentralEye() # this is only used for parameter bounds here.
+		# parameters #
+		parameters = hs.utils.Parameters(is_filter_val=is_filter_val)
+		def head():
+			np.random.seed()
+			out = {}
+			out["color"] = hs.utils.quantized_uniform(*boxhead.parameters["color"][0],n_quantized=10) if not "color" in default_params else default_params["color"]
+			scale = hs.utils.quantized_uniform(0.75,1.25,n_quantized=15)
+			out["scale"] = np.asarray([scale, scale, scale]) if not "scale" in default_params else default_params["scale"]
+			return out
+		parameters.add_parameters("head", head)
+
+		def eyes(color, **kw):
+			np.random.seed()
+			out = {}
+			out["_overall_eye_color"] = hs.utils.quantized_normal(0,0.2,n_quantized=7)+color if not "_overall_eye_color" in default_params else default_params["_overall_eye_color"]
+			out["eye_color"] = np.mod(hs.utils.quantized_uniform(-0.25, 0.25,size=4,n_quantized=7)+out["_overall_eye_color"], 1) if not "eye_color" in default_params else default_params["eye_color"]
+			return out
+		parameters.add_parameters("eyes", eyes, ["head"])
+
+		def view():
+			np.random.seed()
+			out = {}
+			floor, wall = hs.utils.quantized_uniform(*boxhead.parameters["bg_color"][0], # [floor, wall]
+				size=boxhead.parameters["bg_color"][1], n_quantized=10)
+			out["_floor_color"] = floor if not "_floor_color" in default_params else default_params["_floor_color"]
+			out["_wall_color"] = wall if not "_wall_color" in default_params else default_params["_wall_color"]
+			out["bg_color"] = np.asarray([out["_floor_color"],out["_wall_color"]])
+			out["azimuth"] = hs.utils.quantized_uniform(*boxhead.parameters["azimuth"][0],
+				size=boxhead.parameters["azimuth"][1],n_quantized=10) if not "azimuth" in default_params else default_params["azimuth"]
+			return out
+		parameters.add_parameters("view", view)
+		return boxhead, parameters
+
+class HierShapesBoxheadNoHier(HierShapesBase):
+	def get_scene_parameters(self, default_params={}, is_filter_val=True):
+		# get_intermediate_values must be false when generating factors
+		
+		adjustable_parameters = ["color","scale","eye_color","azimuth","_overall_eye_color","_wall_color","_floor_color"]
+		for k in default_params.keys(): assert k in adjustable_parameters, f"{k} not in adjustable_parameters: {adjustable_parameters}" 
+		#boxhead = hs.scene.BoxHead(eyes=[0])
+		boxhead = hs.scene.BoxHeadCentralEye() # this is only used for parameter bounds here.
+		# parameters #
+		parameters = hs.utils.Parameters(is_filter_val=is_filter_val)
+		def head():
+			np.random.seed()
+			out = {}
+			out["color"] = hs.utils.quantized_uniform(*boxhead.parameters["color"][0],n_quantized=10) if not "color" in default_params else default_params["color"]
+			scale = hs.utils.quantized_uniform(0.75,1.25,n_quantized=15)
+			out["scale"] = np.asarray([scale, scale, scale]) if not "scale" in default_params else default_params["scale"]
+			return out
+		parameters.add_parameters("head", head)
+
+		def eyes(color, **kw):
+			np.random.seed()
+			out = {}
+			out["_overall_eye_color"] = hs.utils.quantized_uniform(0,1,n_quantized=7) if not "_overall_eye_color" in default_params else default_params["_overall_eye_color"]
+			out["eye_color"] = np.mod(hs.utils.quantized_uniform(-0.1, 0.1,size=4,n_quantized=7)+out["_overall_eye_color"], 1) if not "eye_color" in default_params else default_params["eye_color"]
+			return out
+		parameters.add_parameters("eyes", eyes, ["head"])
+
+		def view():
+			np.random.seed()
+			out = {}
+			floor, wall = hs.utils.quantized_uniform(*boxhead.parameters["bg_color"][0], # [floor, wall]
+				size=boxhead.parameters["bg_color"][1], n_quantized=10)
+			out["_floor_color"] = floor if not "_floor_color" in default_params else default_params["_floor_color"]
+			out["_wall_color"] = wall if not "_wall_color" in default_params else default_params["_wall_color"]
+			out["bg_color"] = np.asarray([out["_floor_color"],out["_wall_color"]])
+			out["azimuth"] = hs.utils.quantized_uniform(*boxhead.parameters["azimuth"][0],
+				size=boxhead.parameters["azimuth"][1],n_quantized=10) if not "azimuth" in default_params else default_params["azimuth"]
+			return out
+		parameters.add_parameters("view", view)
+		return boxhead, parameters

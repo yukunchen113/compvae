@@ -5,13 +5,15 @@ import hsr.model.vae as md
 from hsr.save import TrainSaver, ModelSaver, PickleSaver
 import hsr.dataset as ds
 from hsr.train import Trainer
-from hsr.visualize import lvae_traversal
+from hsr.visualize import lvae_traversal, vlae_traversal
 from hsr.utils.multiprocess import ParallelRun
 import hsr.utils as ut
 import tensorflow as tf
 import copy
+import shutil
 import hsr.utils.hparams as hp
-
+import custom_architecture
+import custom_architecture_large
 #############
 # Execution #
 #############
@@ -38,26 +40,27 @@ def train_parallel(job_num=None):
 	#######################
 	# Base Parallel Setup #
 	#######################
-	path = "experiments/lvae/"
+	path = "experiments/"
 	jobs_path = os.path.join(path, "jobs")
 	base_kw = dict(
 		path = path,
 
 		# dataset params
 		dataset_random_seed=1,
-		train_dataset_params = dict(batch_size=100),
+		train_dataset_params = dict(batch_size=32),
 		dataset=None,
 
 		# model params
 		random_seed = 1,
 		model_params = dict(beta=1,num_latents=6),
 		model_processing = [],
-		Model = md.LVAE,
+		Model = custom_architecture.LVAE,
 
 		# training params
 		training_params = dict(loss_func=ut.loss.ImageBCE(),optimizer=tf.keras.optimizers.Adamax(learning_rate=0.0003)),
 		hparam_scheduler = None, # initialized hparam_scheduler
 		visualized_images = [1,5],
+		traversal=None,
 		)
 	###################
 	# Create the Jobs #
@@ -76,16 +79,39 @@ def train_parallel(job_num=None):
 	jobs = [base_kw]
 	#for j in jobs: print("base",j["path"])
 
+	# base model
+	base_models = [
+		# dict( # test hiershapes
+		# 	path = lambda x: os.path.join(x, "vlae_custom_test/"),
+		# 	Model = lambda x: custom_architecture.VLAE,
+		# 	traversal = lambda x: vlae_traversal,
+		# 	),
+		dict( # test hiershapes
+			path = lambda x: os.path.join(x, "lvae_custom/"),
+			Model = lambda x: custom_architecture.LVAE,
+			traversal = lambda x: lvae_traversal,
+			),
+		]
+	jobs = mix_params(jobs, base_models)	
+
 	# dataset
 	dataset = [
 		#dict( # test celeba dataset
 		#	path = lambda x: os.path.join(x, "celeba"),
 		#	dataset = lambda x: ds.CelebA(),
-		#),
-		dict( # test shapes3d dataset
-			path = lambda x: os.path.join(x, "shapes3d"),
-			dataset = lambda x: ds.Shapes3D(),
-		),
+		#	),
+		# dict( # test shapes3d dataset
+		# 	path = lambda x: os.path.join(x, "shapes3d"),
+		# 	dataset = lambda x: ds.Shapes3D(),
+		# 	),
+		dict( # test hiershapes
+			path = lambda x: os.path.join(x, "hiershapes/boxhead_09"),
+			dataset = lambda x: ds.HierShapesBoxhead(port=65332),
+			),
+		# dict( # test hiershapes
+		# 	path = lambda x: os.path.join(x, "hiershapes/boxhead_no_hierarchy_color"),
+		# 	dataset = lambda x: ds.HierShapesBoxheadNoHier(port=65335), # this port should be different from other dataset ports
+		# 	),
 		]
 	jobs = mix_params(jobs, dataset)
 	#for j in jobs: print("dataset",j["path"])
@@ -93,10 +119,18 @@ def train_parallel(job_num=None):
 	# add models
 	models = [
 		dict(
-			path=lambda x: os.path.join(x,"subspace/num_latents_4"),
-			model_processing=lambda x: [md.LatentSubspaceLVAE([[0,0,2,2],[0,0,2,2]])],	
+			path=lambda x: os.path.join(x,"base/num_latents_4"),
 			model_params=lambda x: {**x,**dict(num_latents=4)},
 			),
+		dict(
+			path=lambda x: os.path.join(x,"base/num_latents_6"),
+			model_params=lambda x: {**x,**dict(num_latents=6)},
+			),
+		# dict(
+		# 	path=lambda x: os.path.join(x,"subspace/num_latents_4"),
+		# 	model_processing=lambda x: [md.LatentSubspaceLVAE([[0,0,2,2],[0,0,2,2]])],	
+		# 	model_params=lambda x: {**x,**dict(num_latents=4)},
+		# 	),
 		#dict(
 		#	path=lambda x: os.path.join(x,"snorm/num_latents_6"),
 		#	model_processing=lambda x: [md.StandardNormalBetaLVAE()],	
@@ -117,20 +151,29 @@ def train_parallel(job_num=None):
 
 	# add hparams
 	hparams = [
-		dict(
-			path=lambda x: os.path.join(x,"beta_10/alpha_scheduled"),
+		dict(path=lambda x: os.path.join(x,"beta_20-15-10/alpha_scheduled"),
 			hparam_scheduler= lambda x: hp.network.StepTrigger(
 					num_layers=3,
 					alpha_kw={"duration":5000, "start_val":0, "final_val":1, "start_step":5000},
 					layerhps = [
 						hp.layers.NoOp(beta=10),
-						hp.layers.NoOp(beta=10),
-						hp.layers.NoOp(beta=10),
+						hp.layers.NoOp(beta=15),
+						hp.layers.NoOp(beta=20),
 					]
 				),
 			),
-		dict(
-			path=lambda x: os.path.join(x,"beta_15/alpha_scheduled"),
+		dict(path=lambda x: os.path.join(x,"beta_25-20-15/alpha_scheduled"),
+			hparam_scheduler= lambda x: hp.network.StepTrigger(
+					num_layers=3,
+					alpha_kw={"duration":5000, "start_val":0, "final_val":1, "start_step":5000},
+					layerhps = [
+						hp.layers.NoOp(beta=15),
+						hp.layers.NoOp(beta=20),
+						hp.layers.NoOp(beta=25),
+					]
+				),
+			),
+		dict(path=lambda x: os.path.join(x,"beta_15/alpha_scheduled"),
 			hparam_scheduler= lambda x: hp.network.StepTrigger(
 					num_layers=3,
 					alpha_kw={"duration":5000, "start_val":0, "final_val":1, "start_step":5000},
@@ -141,8 +184,7 @@ def train_parallel(job_num=None):
 					]
 				),
 			),
-		dict(
-			path=lambda x: os.path.join(x,"beta_30/alpha_scheduled"),
+		dict(path=lambda x: os.path.join(x,"beta_30/alpha_scheduled"),
 			hparam_scheduler= lambda x: hp.network.StepTrigger(
 					num_layers=3,
 					alpha_kw={"duration":5000, "start_val":0, "final_val":1, "start_step":5000},
@@ -179,7 +221,7 @@ def train_parallel(job_num=None):
 	# Submit and Run Jobs #
 	#######################
 	if job_num is None: 
-		parallel = ParallelRun(exec_file=os.path.abspath(__file__), job_path=jobs_path, num_gpu=2, max_concurrent_procs_per_gpu=2)
+		parallel = ParallelRun(exec_file=os.path.abspath(__file__), job_path=jobs_path, num_gpu=2, max_concurrent_procs_per_gpu=3)
 		parallel(*[str(i) for i in range(len(jobs))])
 	else:
 		run_training(**jobs[job_num])
@@ -187,8 +229,9 @@ def train_parallel(job_num=None):
 ################
 # Used Objects #
 ################
-def run_training(path, dataset, train_dataset_params, random_seed, model_params, Model, training_params, model_processing=[],dataset_random_seed=1,
-	hparam_scheduler=None, final_step=100000, modelsavestep=1000, imagesavestep=1000, visualized_images=[0]):
+def run_training(path, dataset, train_dataset_params, random_seed, model_params, Model, training_params, traversal, 
+	model_processing=[],dataset_random_seed=1,
+	hparam_scheduler=None, final_step=200000, modelsavestep=1000, imagesavestep=1000, visualized_images=[0]):
 	##############
 	# Initialize #
 	##############
@@ -197,8 +240,16 @@ def run_training(path, dataset, train_dataset_params, random_seed, model_params,
 	modelsavepath = os.path.join(path, "model")
 	trainsavepath = os.path.join(path, "train")
 	imagesavepath = os.path.join(path, "images")
-	for i in [modelsavepath,trainsavepath,imagesavepath]: 
+	misavepath = os.path.join(path, "mi")
+	for i in [modelsavepath,trainsavepath,imagesavepath,misavepath]: 
 		if not os.path.exists(i): os.makedirs(i)
+	
+	# save latest running of this script into train
+	current_filepath = os.path.abspath(__file__)
+	trainfiledst = os.path.join(trainsavepath, os.path.basename(__file__))
+	shutil.copyfile(current_filepath, trainfiledst)
+	with open(trainfiledst,"a") as f:
+		f.write(f"\n#args: {sys.argv}")
 
 	# create data
 	datasetsaver = PickleSaver(datasetsavepath)
@@ -246,14 +297,14 @@ def run_training(path, dataset, train_dataset_params, random_seed, model_params,
 
 		# logging 
 		if not step%imagesavestep:
-			lvae_traversal(
+			traversal(
 				model,
 				dataset.preprocess(test_data[visualized_images]),
 				min_value=-2.5,max_value=2.5,num_steps=30,
 				return_traversal_object=True,
 				hparam_obj=hparam_scheduler,
 				is_sample=False).save_gif(os.path.join(imagesavepath, "%d.gif"%step))
-
+	if hasattr(dataset, "close"): dataset.close()
 
 import sys
 if __name__ == '__main__':

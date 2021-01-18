@@ -29,10 +29,55 @@ def test_model_save():
 	out = model(data)
 	print(out.shape)
 
+import custom_architecture
+def test_vlae():
+	dataset = ds.HierShapesBoxhead(False)
+	data = dataset.preprocess(dataset.test()[:32])
+	model = custom_architecture.VLAE(num_latents = 10)
+	for i in range(2):
+		out = model(data)
+	print(out.shape)
+
+import numpy as np
+import tensorflow as tf
+import sys
+import hsr.metrics as mt
+def test_metrics(model_num=None):
+	######################
+	# Get Model and Data #
+	######################
+	path = "experiments/"
+	paths = []
+	for base,folders,files in os.walk(path):
+		if "model" in folders:
+			paths.append(os.path.join(base,"model"))
+	paths.sort()
+	if model_num is None:
+		for i,p in enumerate(paths): print(i,":",p)
+		return None
+	path = paths[model_num]
+	cprint.blue("selected:", path)
+
+	# dataset params #
+	tf.random.set_seed(1)
+	#dataset = ds.Shapes3D()
+	dataset = ds.HierShapesBoxhead(use_server=False)
+	#dataset = ds.CelebA()
+
+	# create model #
+	modelsaver = ModelSaver(path)
+	model = modelsaver.load()
+	assert not model is None, f"No model found in {path}"
+
+	return model, dataset
 
 
-# test dataset 
 
 
 if __name__ == '__main__':
-	test_model_save()
+	args=sys.argv
+	if len(args)>1:
+		model_num=int(args[1])
+	else:
+		model_num=None
+	test_metrics(model_num)

@@ -2,7 +2,6 @@ import numpy as np
 import os
 import pyvista as pv
 import open3d as o3d
-import colorsys
 import copy
 import inspect
 
@@ -55,14 +54,6 @@ class CylinderProj(BaseProj):
 		points[~face,:-1] = points[~face,:-1]/np.sqrt(np.sum(np.square(points[~face,:-1]),axis=-1,keepdims=True))
 		return points
 
-class HueToColor:
-	def __init__(self, percent_saturation=100, percent_value=100):
-		self.saturation = percent_saturation/100
-		self.value = percent_value/100
-	def __call__(self, hue):
-		assert hue <= 1 and hue >= 0, "hue must be between 0 and 1"
-		return colorsys.hsv_to_rgb(hue,self.saturation,self.value)
-
 class ShapeProj(BaseProj):
 	def __init__(self, shape_val):
 		self.shape_val = shape_val
@@ -76,17 +67,41 @@ class ShapeProj(BaseProj):
 			points = (p1 - p0)*(self.shape_val-np.floor(self.shape_val)) + p0
 		return points
 
+class CubicGrid:
+	def __init__(self, resolution):
+		self.resolution = resolution
+	
+	def __call__(self, return_list_of_faces=False):
+		x = np.linspace(-1,1,self.resolution)
+		y = np.linspace(-1,1,self.resolution)
+		x,y = np.meshgrid(x,y)
+		z = np.ones_like(x)
+		face = np.transpose(np.vstack((x.reshape(-1),y.reshape(-1),z.reshape(-1))))
+		faces = []
+		for i in range(3): # 3 dimensions
+			for sign in [-1,1]:
+				f = face.copy()
+				f[:,-1] = f[:,-1]*sign
+
+				switch_rows = [0,1]
+				switch_rows.insert(i,2)
+				f = f[:,switch_rows]
+
+				faces.append(f)
+		if not return_list_of_faces: faces = np.vstack(faces)
+		return faces
+
 class Base3D:
 	def __init__(self, shapeobj, color=[0.5,0.5,0.5], resolution=2, normals_consistent_tangent_plane=20, num_smooth_interations=3, poisson_depth=9):
 		self.shapeobj = shapeobj
 		self.resolution = resolution
+		self.cubic_grid = CubicGrid(resolution=resolution)
 		self.normals_consistent_tangent_plane = normals_consistent_tangent_plane
 		self.num_smooth_interations = num_smooth_interations
 		self.poisson_depth = poisson_depth
 		self.color = color
-		self._postprocess = {"cloud":None,"vertices":None,"triangles":None,"color":None}
+		self._postprocess = {"cloud":None,"vertices":None,"triangles":None,"color":None,"mesh":None}
 		self._vertices, self._triangles = None, None
-
 	def add_postprocess(self, postprocess, process_type):
 		old = self._postprocess[process_type]
 		if old is None:
@@ -122,33 +137,13 @@ class Base3D:
 	
 	@property
 	def mesh(self):
-		assert not self.vertices is None, "Not initialized"
-		assert not self.triangles is None, "Error, vertices are defined but not triangles, call this class again to set both"
+		if self.vertices is None or self.triangles is None: self.create_mesh()
 		vertices = self.postprocess(self.vertices, "vertices")
 		triangles = self.postprocess(self.triangles, "triangles")
 		triangles = np.concatenate((np.sum(np.ones_like(triangles),axis=-1,keepdims=True),triangles), axis=-1) # format to pyvista format
 		mesh = pv.PolyData(vertices, triangles)
+		mesh = self.postprocess(mesh,"mesh")
 		return mesh
-
-	def cubic_grid(self, return_list_of_faces=False):
-		x = np.linspace(-1,1,self.resolution)
-		y = np.linspace(-1,1,self.resolution)
-		x,y = np.meshgrid(x,y)
-		z = np.ones_like(x)
-		face = np.transpose(np.vstack((x.reshape(-1),y.reshape(-1),z.reshape(-1))))
-		faces = []
-		for i in range(3): # 3 dimensions
-			for sign in [-1,1]:
-				f = face.copy()
-				f[:,-1] = f[:,-1]*sign
-
-				switch_rows = [0,1]
-				switch_rows.insert(i,2)
-				f = f[:,switch_rows]
-
-				faces.append(f)
-		if not return_list_of_faces: faces = np.vstack(faces)
-		return faces
 
 	def make_surface(self, data):
 		pcd = o3d.geometry.PointCloud()
@@ -170,15 +165,17 @@ class Base3D:
 		data = np.load(path)
 		self._vertices, self._triangles = data["vertices"], data["triangles"]
 
+	def create_mesh(self):
+		data = self.cubic_grid() # ~80 is good quality
+		data = self.shapeobj(data)
+
+		# get the triangles with poisson surface resonstruction
+		data = self.postprocess(data, "cloud")
+		self._vertices, self._triangles = self.make_surface(data)
+
 	def __call__(self, reset=False):
 		# get point cloud of surface
-		if self.vertices is None or self.triangles is None or reset:
-			data = self.cubic_grid() # ~80 is good quality
-			data = self.shapeobj(data)
-
-			# get the triangles with poisson surface resonstruction
-			data = self.postprocess(data, "cloud")
-			self._vertices, self._triangles = self.make_surface(data)
+		if reset: self.create_mesh()
 
 		# polydata object
 		color = self.postprocess(self.color,"color")
@@ -186,6 +183,7 @@ class Base3D:
 
 class Shape3D(Base3D):
 	def __init__(self, shape_val, path=None, **kw):
+		shape_val = np.round(shape_val, 1)
 		shapeobj = ShapeProj(shape_val)
 		self.shape_val = shape_val
 		self.path = path
@@ -210,7 +208,7 @@ class Node:
 		self.check_shape(shape3d)
 		self.postprocess = []
 		self.children = []
-
+	
 	def check_shape(self, shape3d):
 		assert hasattr(shape3d, "postprocess")
 		assert hasattr(shape3d, "add_postprocess")
@@ -221,7 +219,7 @@ class Node:
 	def add_child(self, child, overwrite=False):
 		assert (not child in self.children) or overwrite, "child already exists"
 		# make sure the child is a Node
-		assert Node in inspect.getmro(child.__class__)
+		assert Node in inspect.getmro(child.__class__), "child is not a Node object"
 		child = self.apply_postprocesses(child) # apply transformations/postprocess to new child
 		self.children.append(child)
 

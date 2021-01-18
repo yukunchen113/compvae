@@ -5,9 +5,6 @@
 	- include non-iid aspects - distribution shift, interventions etc.
 
 
-
-
-
 # Literature Review
 ## Paper: Learning Unsupervised Hierarchical Part Decomposition of 3D Objects from a Single RGB Image
 Link: https://openaccess.thecvf.com/content_CVPR_2020/papers/Paschalidou_Learning_Unsupervised_Hierarchical_Part_Decomposition_of_3D_Objects_From_a_CVPR_2020_paper.pdf
@@ -60,9 +57,7 @@ Our Strengths:
 		- eg. they only have position, shape, size, rotation 
 
 
-
-
-## Paper: Learning Semantic RepresentationsOf Objects And Their Parts
+## Paper: Learning Semantic Representations Of Objects And Their Parts
 Link:http://www.iro.umontreal.ca/~lisa/pointeurs/2013_semantic_image_mlj.pdf
 
 ### Contribution:
@@ -181,7 +176,51 @@ Differences
 - different from us. We want the hierarchies to represent FoV
 
 
+# Macro-Micro
 
+## Paper
+### What is the Hierarchy
+### Significance of Hierarchy
+### How do they achieve the hierarchy
+
+
+
+
+https://arxiv.org/pdf/1707.00819.pdf
+
+## Paper: Multi-Level Cause-Effect Systems
+http://proceedings.mlr.press/v51/chalupka16.pdf
+
+### What is the Hierarchy
+- microlevel that increasingly detailed information but are too complex to be able to infer information on a macro scale
+- this allows us to make decisions in an abstract space
+
+### Significance of Hierarchy
+- microlevel hierarchy can be used to infer information on the macrolevel
+
+### How do they achieve the hierarchy
+...
+
+## Paper: Quantifying causal emergence shows that macro can beat micro
+https://www.pnas.org/content/110/49/19790
+### What is the Hierarchy
+"It is widely assumed that, once a micro level is fixed, macro levels are fixed too, a relation called supervenience. It is also assumed that, although macro descriptions may be convenient, only the micro level is causally complete, because it includes every detail"
+
+- supervenience == dependence (X supervenes on Y means that X will only change if Y changes)
+
+### Significance of Hierarchy
+- though a micro model is more complete, with sufficient effective information, macro models can perform just as well or better than micro models due to being "more deterministic and/or less degenerative"
+	- effective information a mesure of how much the mechanisms in the system can constrain the system's past and future states
+
+### How do they achieve the hierarchy
+...
+
+
+
+https://www.sciencedirect.com/science/article/abs/pii/0004370294900140
+https://arxiv.org/pdf/1412.2309.pdf
+https://www.jstor.org/stable/1909285?seq=1
+https://arxiv.org/pdf/2010.03635.pdf
 
 
 # Other Notes:

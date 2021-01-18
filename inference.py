@@ -24,7 +24,8 @@ def inference_lvae(model_num=None):
 
 	# dataset params #
 	tf.random.set_seed(1)
-	dataset = ds.Shapes3D()
+	#dataset = ds.Shapes3D()
+	dataset = ds.HierShapesBoxhead(use_server=False)
 	#dataset = ds.CelebA()
 	test_data = dataset.test()
 
@@ -213,7 +214,35 @@ class LVAELayerDependenceAnalysis:
 	def get_traversal_ranges(self,model,images):
 		assert len(images.shape) == 4, "must be batch of images"
 
+'''
+def inference_lvae(model_num=None):
+	# Select Model Number #
+	path = "experiments/"
+	paths = []
+	for base,folders,files in os.walk(path):
+		if "model" in folders:
+			paths.append(os.path.join(base,"model"))
+	paths.sort()
+	if model_num is None:
+		for i,p in enumerate(paths): print(i,":",p)
+		exit()
+	path = paths[model_num]
+	cprint.blue("selected:", path)
 
+	# dataset params #
+	tf.random.set_seed(1)
+	dataset = ds.HierShapesBoxhead(use_server=False)
+	#dataset = ds.CelebA()
+	test_data = dataset.test()
+	test_data = dataset.preprocess(test_data)
+	# create model #
+	modelsaver = ModelSaver(path)
+	model = modelsaver.load()
+	images = model(test_data)
+	for i in zip(test_data, images):
+		plt.imshow(np.concatenate(i, axis=-2))
+		plt.show()
+'''
 import sys
 if __name__ == '__main__':
 	args=sys.argv

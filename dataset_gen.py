@@ -1,75 +1,31 @@
 import hiershapes as hs
 import numpy as np
 import os
+import shutil
 import pyvista as pv
 import open3d as o3d
 import vtk
 import colorsys
 import copy
 import inspect
+import dill
+import socket
+import sys
+import time
 
-from hiershapes.base import BaseProj, CubeProj, SphereProj, CylinderProj, HueToColor, ShapeProj, Base3D, Shape3D, Node
+from hiershapes.base import BaseProj, CubeProj, SphereProj, CylinderProj, ShapeProj, Base3D, Shape3D, Node
 from hiershapes.view import Background, Camera, Lighting
-from hiershapes.scene import Pyramid
+from hiershapes.scene import Pyramid, BoxHead, BoxHeadCentralEye
+import hiershapes.scene as sc
+from hiershapes.dataset import Batch
+from hiershapes.utils import Parameters
 
-
-import threading
+import hiershapes.utils as ut 
+import hiershapes.dataset as ds
+from multiprocessing import Process, Queue
 import queue
 
-
-
-
-class Batch():
-	def __init__(self, scene, set_kw={}, prefetch=0, batch_size=None):
-		self.scene = scene
-		self.batch_size = batch_size
-		self.set_kw = set_kw
-		self.prefetch = prefetch
-		self.threads = []
-		self.queue = None
-
-	def batch(self,batch_size):
-		self.batch_size = batch_size
-
-	def get_batch(self, savetoqueue=False):
-		images, labels = [], []
-		for i in range(self.batch_size):
-			parameters = self.scene.randomize_parameters(**self.set_kw)
-			labels.append(parameters)
-			images.append(self.scene(**parameters))
-		if savetoqueue:
-			self.queue.put((np.asarray(images), labels))
-		else:
-			return np.asarray(images), labels
-	
-	def __call__(self):
-		if self.prefetch:
-			for i in self.threads:
-				if not i.is_alive(): 
-					i.join()
-			self.threads = [i for i in self.threads if i.is_alive()]
-			if self.queue is None:
-				self.queue = queue.Queue(self.prefetch)
-				for i in range(self.prefetch): 
-					thread = threading.Thread(target=self.get_batch, kwargs={"savetoqueue":True})
-					thread.start()
-					self.threads.append(thread)
-				images, labels = self.queue.get()
-			else:
-				images, labels = self.queue.get()
-				thread = threading.Thread(target=self.get_batch, kwargs={"savetoqueue":True})
-				thread.start()
-				self.threads.append(thread)
-			return images, labels
-		else:
-			return self.get_batch()
-
-	def __iter__(self):
-		return self
-	def __next__(self):
-		return self.__call__()
-
-# test
+# test basic
 def cubic_grid(resolution=2):
 	x = np.linspace(-1,1,resolution)
 	y = np.linspace(-1,1,resolution)
@@ -121,7 +77,7 @@ def plot_basic_shapes():
 
 def plot_combo_shapes():
 	# color
-	color = HueToColor()
+	color = ut.HSVToRGB()
 
 	##########
 	# Shapes #
@@ -204,8 +160,9 @@ def plot_joint_shape():
 	p.add_mesh(mesh, color="fff000")
 	p.show()
 
+# test scene
 import matplotlib.pyplot as plt
-def plot_scene():
+def plot_pyramid_scene():
 	pyramid = Pyramid()
 	
 	# label
@@ -224,87 +181,473 @@ def plot_scene():
 	# plt.show()
 
 	# randomized batch
-	batch = Batch(pyramid, set_kw=dict(shape=1), prefetch=0)
-	batch.batch(100)
-	images, labels = batch()
-	
+	batch = Batch(pyramid, set_kw=dict(shape=1))
+	batch.batch(32)
+	for images,labels in batch:
+		print(images.shape), len(labels)
 	# image
-	plt.imshow(images[0])
+	plt.imshow(images[10])
 	plt.show()
 
-def plot_test():
-	import vtk
+def plot_boxhead_raw():
+	# color
+	color = ut.HSVToRGB()
 
-	# Use a sphere
-	import pyvista
-	from pyvista import examples
+	##########
+	# Shapes #
+	##########
+	base_length = 1
+	mid_length = 2/7*base_length
+	top_length = 1/2*mid_length
 
-	mesh = Shape3D(0, resolution=10)()
 
-	colors = vtk.vtkNamedColors()
-	colors.SetColor('HighNoonSun', [255, 255, 251, 255])  # Color temp. 5400°K
-	colors.SetColor('100W Tungsten', [255, 214, 170, 255])  # Color temp. 2850°K
+	# mids
+	def make_rectangle(cloud):
+		cloud = cloud*np.asarray([[base_length,mid_length,mid_length]])
+		return cloud
+	right = Shape3D(1, color=color(0.1), resolution=20)
+	right.add_postprocess(make_rectangle, "vertices")
+	right = Node(right, is_show=False)
+	right.add_postprocess(lambda cloud: cloud+np.asarray([[base_length/2,3/7*base_length,3/7*base_length]]), "vertices") # shift to 0
+	
+	def make_rectangle(cloud):
+		cloud = cloud*np.asarray([[base_length,mid_length,mid_length]])
+		return cloud
+	left = Shape3D(1, color=color(0.1), resolution=20)
+	left.add_postprocess(make_rectangle, "vertices")
+	left = Node(left, is_show=False)
+	left.add_postprocess(lambda cloud: cloud+np.asarray([[base_length/2,-3/7*base_length,3/7*base_length]]), "vertices") # shift to 0
 
-	# light1 = vtk.vtkLight()
-	# light1.SetFocalPoint(0, 0, 0)
-	# light1.SetPosition(0, 1, 0.2)
-	# light1.SetColor(colors.GetColor3d('HighNoonSun'))
-	# light1.SetIntensity(0.3)
-	#renderer.AddLight(light1)
+	# base
+	def make_rectangle(cloud):
+		cloud = cloud*np.asarray([[base_length,base_length,base_length]])
+		return cloud
+	base = Shape3D(1, color=color(0.2), resolution=20)
+	base.add_postprocess(make_rectangle, "vertices")
 
-	light2 = vtk.vtkLight()
-	light2.SetFocalPoint(0, 0, 0)
-	light2.SetPosition(-0.5, 1, 0.5)
-	light2.SetColor(colors.GetColor3d('100W Tungsten'))
-	light2.SetIntensity(1.0)
-	#renderer.AddLight(light2)
+	# make tree
+	base = Node(base)
+	base.add_child(right)
+	base.add_child(left)
+	base.add_postprocess(lambda cloud: cloud+np.asarray([[0,0,base_length]]), "vertices") # shift to 0
+	def subtract(mesh):
+		return mesh.boolean_difference(left.shape3d.mesh)
+	base.shape3d.add_postprocess(subtract, "mesh") # shift to 0
 
-	# Add a box on the bottom
-	bounds = mesh.GetBounds()
-	rnge = (bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
-	expand = 1.0
-	THICKNESS = rnge[2] * 0.1
-	center = ((bounds[1] + bounds[0]) / 2.0, bounds[2] + THICKNESS / 2.0, (bounds[5] + bounds[4]) / 2.0)
-	xlen = bounds[1] - bounds[0] + (rnge[0] * expand)
-	ylen = THICKNESS
-	zlen = bounds[5] - bounds[4] + (rnge[2] * expand)
-	plane_mesh = pyvista.Cube(center, xlen, ylen, zlen)
+	# can apply processing that affects all descendents
+	def apply_scaling(cloud):
+		return cloud*np.asarray([[1,1,1]])
+	base.add_postprocess(apply_scaling, "vertices")
 
-	# create the plotter
-	pl = pyvista.Plotter()
-	pl.renderer.RemoveAllLights()
-	#pl.renderer.AddLight(light1)
-	pl.renderer.AddLight(light2)
-	pl.add_mesh(mesh, ambient=0.2, diffuse=0.5, specular=0.51, specular_power=30,
-				smooth_shading=True, color='orange')
-	pl.add_mesh(plane_mesh)
+	###########
+	# Plotter #
+	###########
+	p = pv.Plotter()
+	for mesh in base(): 
+		p.add_mesh(**mesh)
 
-	shadows = vtk.vtkShadowMapPass()
-	seq = vtk.vtkSequencePass()
+	##############
+	# Background #
+	##############
+	camera = Camera(12, 0, np.pi/2-1/180*np.pi)
+	background = Background(
+		wall_color=color(0.2), 
+		floor_color=color(0.7),
+		wall_faces=[0,2,3])
+	#lightingobj = Lighting()
+	wall, floor, ceil = background()
+	p.add_mesh(**wall)
+	p.add_mesh(**floor)
+	p.set_background("royalblue")
+	p.camera_position = camera(theta=0,translate=[0,0,2])
+	#p = lightingobj(p) # lighting
 
-	passes = vtk.vtkRenderPassCollection()
-	passes.AddItem(shadows.GetShadowMapBakerPass())
-	passes.AddItem(shadows)
-	seq.SetPasses(passes)
+	p.show()
 
-	# Tell the renderer to use our render pass pipeline
-	cameraP = vtk.vtkCameraPass()
-	cameraP.SetDelegatePass(seq)
-	pl.renderer.SetPass(cameraP)
+def plot_boxhead_scene():
+	#boxhead = sc.BoxHead(eyes=[0])
+	boxhead = sc.BoxHeadCentralEye()
+	# parameters
+	parameters = Parameters()
+	def head():
+		np.random.seed()
+		out = {}
+		out["color"] = hs.utils.quantized_uniform(*boxhead.parameters["color"][0])
+		scale = hs.utils.quantized_uniform(0.75,1.25)
+		out["scale"] = np.asarray([scale, scale, scale])
+		return out
+	parameters.add_parameters("head", head)
 
-	# nice camera position
-	cpos = [(0.10533537264201895, 0.28584795035272126, 0.3472861003034224),
-			(-0.028657675440026627, 0.060039973117803645, -0.094230396877531),
-			(-0.07280203079138521, 0.8967386829419564, -0.4365313262850401)]
+	def eyes(color, **kw):
+		np.random.seed()
+		out = {}
+		eye_color = hs.utils.quantized_normal(0,0.1,n_quantized=5)+color
+		out["eye_color"] = np.mod(hs.utils.quantized_uniform(-0.1, 0.1, size=4,n_quantized=5)+eye_color, 1)	
+		return out
+	parameters.add_parameters("eyes", eyes, ["head"])
 
-	pl.camera_position = cpos
-	pl.show()
-	print(pl.camera_position)
+	def view():
+		np.random.seed()
+		out = {}
+		out["bg_color"] = hs.utils.quantized_uniform(*boxhead.parameters["bg_color"][0],size=boxhead.parameters["bg_color"][1])
+		out["azimuth"] = hs.utils.quantized_uniform(*boxhead.parameters["azimuth"][0],size=boxhead.parameters["azimuth"][1])
+		return out
+	parameters.add_parameters("view", view)
+
+	while True:
+		image = boxhead(**parameters())
+		plt.imshow(image)
+		plt.show()
+
+def get_boxhead_dataset():
+	boxhead = BoxHeadCentralEye()
+	# parameters
+	parameters = Parameters()
+	def head():
+		np.random.seed()
+		out = {}
+		out["color"] = np.random.uniform(*boxhead.parameters["color"][0])
+		length = np.random.uniform(0.75,1)
+		scale = np.random.uniform(1,2)
+		out["scale"] = np.asarray([length, length, 1])*np.asarray([scale, scale, scale])
+		return out
+	parameters.add_parameters("head", head)
+
+	def eyes(color, **kw):
+		np.random.seed()
+		out = {}
+		general_color = np.random.normal(0, 0.025)+color
+		out["eye_color"] = np.clip(general_color+np.random.normal(0,0.025,size=4), *boxhead.parameters["eye_color"][0])
+		return out
+	parameters.add_parameters("eyes", eyes, ["head"])
+
+	def view():
+		np.random.seed()
+		out = {}
+		out["bg_color"] = np.random.uniform(*boxhead.parameters["bg_color"][0],size=boxhead.parameters["bg_color"][1])
+		out["azimuth"] = np.random.uniform(*boxhead.parameters["azimuth"][0],size=boxhead.parameters["azimuth"][1])
+		return out
+	parameters.add_parameters("view", view)
+	return boxhead, parameters
+
+def plot_boxhead_dataset():
+	boxhead, parameters = get_boxhead_dataset()
+	
+	dataset = ds.Batch(scene=boxhead,randomize_parameters_func=parameters)
+	batch = dataset.batch(32)
+	timerobj = ut.Timer()
+	for images, labels in batch:
+		timerobj("Got Batch...")
+		print(images.shape, len(labels))
+		#plt.imshow(images[0])
+		#plt.show()
+
+def run_ServerBatch_boxhead():
+	boxhead = BoxHead(eyes=[0])
+	# parameters
+	parameters = Parameters()
+	def head():
+		np.random.seed()
+		out = {}
+		out["color"] = np.random.uniform(*boxhead.parameters["color"][0])
+		scale = np.random.uniform(1,2)
+		out["scale"] = np.asarray([scale, scale, scale])
+		return out
+	parameters.add_parameters("head", head)
+
+	def eyes(color, **kw):
+		np.random.seed()
+		out = {}
+		general_color = np.random.normal(0, 0.025)+color
+		out["eye_color"] = np.clip(general_color+np.random.normal(0,0.025,size=4), *boxhead.parameters["eye_color"][0])
+		return out
+	parameters.add_parameters("eyes", eyes, ["head"])
+
+	def view():
+		np.random.seed()
+		out = {}
+		out["bg_color"] = np.random.uniform(*boxhead.parameters["bg_color"][0],size=boxhead.parameters["bg_color"][1])
+		out["azimuth"] = np.random.uniform(*boxhead.parameters["azimuth"][0],size=boxhead.parameters["azimuth"][1])
+		return out
+	parameters.add_parameters("view", view)
+	server = ds.Server(scene=boxhead, randomize_parameters_func=parameters, num_proc=5, prefetch=5, 
+		retrieval_batch_size=32)
+	server()
+
+def run_ServerClientBatch_boxhead():
+	boxhead = BoxHead(eyes=[0])
+	# parameters
+	parameters = Parameters()
+	def head():
+		np.random.seed()
+		out = {}
+		out["color"] = np.random.uniform(*boxhead.parameters["color"][0])
+		scale = np.random.uniform(1,2)
+		out["scale"] = np.asarray([scale, scale, scale])
+		return out
+	parameters.add_parameters("head", head)
+
+	def eyes(color, **kw):
+		np.random.seed()
+		out = {}
+		general_color = np.random.normal(0, 0.025)+color
+		out["eye_color"] = np.clip(general_color+np.random.normal(0,0.025,size=4), *boxhead.parameters["eye_color"][0])
+		return out
+	parameters.add_parameters("eyes", eyes, ["head"])
+
+	def view():
+		np.random.seed()
+		out = {}
+		out["bg_color"] = np.random.uniform(*boxhead.parameters["bg_color"][0],size=boxhead.parameters["bg_color"][1])
+		out["azimuth"] = np.random.uniform(*boxhead.parameters["azimuth"][0],size=boxhead.parameters["azimuth"][1])
+		return out
+	parameters.add_parameters("view", view)
+	server = ds.ServerClient(scene=boxhead, randomize_parameters_func=parameters, num_proc=10, prefetch=10,
+		pool_size=5, 
+		retrieval_batch_size=100)
+	client = server().batch(32)
+
+	used_labels = []
+	used_images = None
+	for images, labels in client: # for basic checking, not optimized at all.
+		print("STARTED CHECK")
+		# check label pool
+		label_pool = []
+		for i in client.pool.label_pool:
+			label_pool+=i
+		new_labels = []
+		for i in label_pool:
+			is_same = False
+			for j in used_labels:
+				if ut.Compare()(i,j):
+					is_same = True
+					continue
+			if not is_same:
+				new_labels.append(i)
+		used_labels+=new_labels
+		
+		# check image pool:
+		num_new_images = 0
+		new_images = np.concatenate(client.pool.image_pool, axis=0)
+		if used_images is None:
+			used_images = new_images
+			num_new_images += len(new_images)
+		else:
+			test = None
+			for i in used_images:
+				a = np.all(np.abs(np.expand_dims(i,0)-new_images)<1e-4,(1,2,3))
+				if test is None: 
+					test = a
+				else:
+					test = np.logical_or(test, a)
+			used_images = np.concatenate((used_images, new_images),0)
+			num_new_images+=np.sum(np.logical_not(test).astype(int))
+
+
+
+		print(len(new_labels), num_new_images)
+
+# broadcasting server for multimodel training using generator.
+def run_server():
+	server = ut.Server()
+	while True:
+		requests = server.get_requests()
+		mapping = {"random":np.random.uniform(0,1), "one":1}
+		requests = {k:mapping[v] for k,v in requests.items()}
+		if requests: print(requests)
+		time.sleep(5)
+		server.send_data(requests)
+		time.sleep(0.2)
+
+def run_client():
+	client = ut.Client()
+	print(client("random"))
+	print(client("one"))
+
+def run_server_client(client, server):
+	if int(sys.argv[1]):
+		print("Running Client")
+		client()
+	else:
+		print("Running Server")
+		server()
+
+def run_batch():
+	pyramid = Pyramid()
+	dataset = ds.Batch(scene=pyramid,set_kw=dict(shape=1))
+	dataset.batch(32)
+	for i, data in enumerate(dataset):
+		images, labels = data
+		print(images.shape, len(labels))
+		if i >= 5:
+			break
+	with open("dev_analysis/save.pickle", "wb") as f: 
+		dill.dump(dataset, f)
+	with open("dev_analysis/save.pickle", "rb") as f: 
+		dataset = dill.load(f)
+
+	for i, data in enumerate(dataset):
+		images, labels = data
+		print(f"Got Data {i}, {images.shape}, {len(labels)}")
+		if i >= 5:
+			break
+
+def run_MultiProcessBatch():
+	pyramid = Pyramid()
+	dataset = ds.MultiProcessBatch(scene=pyramid, num_proc=5, prefetch=5, set_kw=dict(shape=1))
+	test = dict( # set_parameters depends on this
+		# object
+		color=[1,1,1],
+		length=[1,1,1],
+		scale=2,
+		shape=1,
+		
+		# view
+		azimuth=np.pi/6,
+		bg_color=[1,1],
+		)
+	images, parameters = dataset.get_images([test], return_labels=True)
+	dataset.batch(32)
+	for i, data in enumerate(dataset):
+		images, labels = data
+		print(f"Got Data {i}, {images.shape}, {len(labels)}")
+
+def run_parallel_batch():
+	pyramid = Pyramid()
+	dataset = ds.ParallelBatch(scene=pyramid, num_proc=5, prefetch=5, retrieval_batch_size=32,set_kw=dict(shape=1))
+	test = dict( # set_parameters depends on this
+		# object
+		color=[1,1,1],
+		length=[1,1,1],
+		scale=2,
+		shape=1,
+		
+		# view
+		azimuth=np.pi/6,
+		bg_color=[1,1],
+		)
+	images, parameters = dataset.get_images([test], return_labels=True)
+	print(images.shape)
+	dataset.batch(32)
+	for i, data in enumerate(dataset):
+		images, labels = data
+		print(f"Got Data {i}, {images.shape}, {len(labels)}")
+		if i >= 5:
+			break
+	with open("dev_analysis/save.pickle", "wb") as f: 
+		dill.dump(dataset, f)
+	with open("dev_analysis/save.pickle", "rb") as f: 
+		dataset = dill.load(f)
+
+	for i, data in enumerate(dataset):
+		images, labels = data
+		print(f"Got Data {i}, {images.shape}, {len(labels)}")
+		if i >= 5:
+			break
+
+def run_ServerBatch():
+	pyramid = Pyramid()
+	server = ds.Server(scene=pyramid, num_proc=5, prefetch=5, 
+		retrieval_batch_size=32,set_kw=dict(shape=1))
+	server()
+
+def run_ClientBatch():
+	dataset = ds.Client(prefetch=5)
+	# test = dict( # set_parameters depends on this
+	# 	# object
+	# 	color=[1,1,1],
+	# 	length=[1,1,1],
+	# 	scale=2,
+	# 	shape=1,
+		
+	# 	# view
+	# 	azimuth=np.pi/6,
+	# 	bg_color=[1,1],
+	# 	)
+	#images, parameters = dataset.get_images([test], return_labels=True)
+	#print(images.shape)
+	dataset.batch(32)
+	for i, data in enumerate(dataset):
+		images, labels = data
+		print(images.shape)
+
+def run_multiclient_server():
+	# this is to mimic the effect of multiple clients running for a server
+	# sees if client allows for termination and for second client
+	scene, parameters = get_boxhead_dataset()
+	
+	servers, clients = [],[]
+	port = 65348
+	# run server client 1
+	server = hs.dataset.ServerClient(scene=scene, randomize_parameters_func=parameters, 
+		num_proc=10, prefetch=2, pool_size=2, port=port, retrieval_batch_size=100)
+	client = server()
+	servers.append(server)
+	clients.append(client)
+	assert not server.server is None
+
+	# run server client 2
+	server = hs.dataset.ServerClient(scene=scene, randomize_parameters_func=parameters, 
+		num_proc=10, prefetch=2, pool_size=2, port=port, retrieval_batch_size=100)
+	client = server()
+	servers.append(server)
+	clients.append(client)
+	assert server.server is None
+
+	# run server client 3
+	server = hs.dataset.ServerClient(scene=scene, randomize_parameters_func=parameters, 
+		num_proc=10, prefetch=2, pool_size=2, port=port, retrieval_batch_size=100)
+	client = server()
+	servers.append(server)
+	clients.append(client)
+	assert server.server is None
+
+
+	for client in clients:
+		client.batch(10)
+		images, labels = client()
+		print(images.shape)
+	for i, client in enumerate(clients): 
+		client.close()
+		print("terminated client",i)
+	clients = []
+
+	# run server client 4
+	server = hs.dataset.ServerClient(scene=scene, randomize_parameters_func=parameters, 
+		num_proc=10, prefetch=2, pool_size=2, port=port, retrieval_batch_size=100)
+	client = server()
+	servers.append(server)
+	clients.append(client)
+	assert server.server is None
+
+	for client in clients:
+		client.batch(10)
+		images, labels = client()
+		print(images.shape)
+	for i, client in enumerate(clients): 
+		client.close()
+		print("terminated client",i)
+
+
+	for i,server in enumerate(servers): 
+		server.close()
+		print("terminated server",i)
+
 
 
 if __name__ == '__main__':
 	#plot_combo_shapes()
 	#plot_joint_shape()
-	plot_scene()
+	#plot_pyramid_scene()
+	#plot_boxhead_scene()
+	run_multiclient_server()
+	#plot_boxhead_dataset()
+	#run_ServerClientBatch_boxhead()
+	#run_server_client(run_ClientBatch, run_ServerBatch_boxhead)
 	#plot_test()
+	#run_server_client(run_client, run_server)
+	#run_batch()
+	#run_MultiProcessBatch()
+	#run_parallel_batch()
 
+	#run_server_client(run_ClientBatch, run_ServerBatch)
