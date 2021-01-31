@@ -577,7 +577,7 @@ def run_multiclient_server():
 	scene, parameters = get_boxhead_dataset()
 	
 	servers, clients = [],[]
-	port = 65348
+	port = 65349
 	# run server client 1
 	server = hs.dataset.ServerClient(scene=scene, randomize_parameters_func=parameters, 
 		num_proc=10, prefetch=2, pool_size=2, port=port, retrieval_batch_size=100)
@@ -627,7 +627,6 @@ def run_multiclient_server():
 	for i, client in enumerate(clients): 
 		client.close()
 		print("terminated client",i)
-
 
 	for i,server in enumerate(servers): 
 		server.close()

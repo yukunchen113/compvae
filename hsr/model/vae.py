@@ -201,13 +201,11 @@ class VLAE(LadderBase):
 	def alpha(self, alpha=None):
 		assert alpha is None or len(alpha) == (len(self.latent_connections)+1)
 		self._alpha = alpha
-
 	def _setup(self):
 		self._setup_encoder()
 		self._setup_decoder()
 		self._setup_encoder_call()
 		self._setup_decoder_call()
-
 	# architecture connections
 	def _setup_encoder(self):
 		"""
@@ -239,7 +237,6 @@ class VLAE(LadderBase):
 					activation=None
 					)
 				self.ladders.append(ladder)
-	
 	def _setup_decoder(self):
 		"""
 		- Sets up latent layer decoder.
@@ -283,7 +280,6 @@ class VLAE(LadderBase):
 					set_shape(layer, shape_input)
 
 			shape_input = list(layer.output_shape[1:])
-
 	def _setup_encoder_call(self):
 		layers = self.encoder.layers.layers
 		latent_connections_map = {lc[0]:i for i,lc in enumerate(self.latent_connections)}
@@ -304,7 +300,6 @@ class VLAE(LadderBase):
 			return latent_space
 
 		self._encoder.call = call
-
 	def _setup_decoder_call(self):
 		layers = self.decoder.layers
 		latent_connections = {lc[1]:i for i,lc in enumerate(self.latent_connections)}
@@ -349,7 +344,6 @@ class VLAE(LadderBase):
 		
 		reconstruction = self.decoder(None, latent_space=self.latent_space,**kw)
 		return reconstruction
-
 	def regularizer(self, latent_space, alpha, beta, **kw):
 		"""Regularizer for latent space
 		
@@ -565,6 +559,8 @@ class LVAE(VLAE):
 		self._past_kld = []
 		for i,ls,ps in zip(range(len(latent_space)), latent_space, prior_space):
 			# select the prior to be a specific distribution
+			if not self.gamma is None and hparams["alpha"][i]<1e-7:
+				hparams["beta"][i] = self.gamma
 			reg_loss,kld=self.layer_regularizer(*ls,*ps[1:], cond_sample=ps[0], return_kld=True, layer_num=i, 
 				**{k:v[i] for k,v in hparams.items()})
 			losses.append(reg_loss)

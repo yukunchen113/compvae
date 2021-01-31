@@ -232,7 +232,7 @@ class HierShapesBase(_Base):
 		d["server"] = None
 		return d
 
-class HierShapesBoxhead(HierShapesBase):
+class HierShapesBoxheadSimple2(HierShapesBase):
 	def get_scene_parameters(self, default_params={}, is_filter_val=True):
 		# get_intermediate_values must be false when generating factors
 		
@@ -246,7 +246,7 @@ class HierShapesBoxhead(HierShapesBase):
 			np.random.seed()
 			out = {}
 			out["color"] = hs.utils.quantized_uniform(*boxhead.parameters["color"][0],n_quantized=10) if not "color" in default_params else default_params["color"]
-			scale = hs.utils.quantized_uniform(0.75,1.25,n_quantized=15)
+			scale = hs.utils.quantized_uniform(1,1.25,n_quantized=10)
 			out["scale"] = np.asarray([scale, scale, scale]) if not "scale" in default_params else default_params["scale"]
 			return out
 		parameters.add_parameters("head", head)
@@ -254,8 +254,8 @@ class HierShapesBoxhead(HierShapesBase):
 		def eyes(color, **kw):
 			np.random.seed()
 			out = {}
-			out["_overall_eye_color"] = hs.utils.quantized_normal(0,0.2,n_quantized=7)+color if not "_overall_eye_color" in default_params else default_params["_overall_eye_color"]
-			out["eye_color"] = np.mod(hs.utils.quantized_uniform(-0.25, 0.25,size=4,n_quantized=7)+out["_overall_eye_color"], 1) if not "eye_color" in default_params else default_params["eye_color"]
+			out["_overall_eye_color"] = hs.utils.quantized_uniform(0,1,n_quantized=7) if not "_overall_eye_color" in default_params else default_params["_overall_eye_color"]
+			out["eye_color"] = np.mod(hs.utils.quantized_normal(0, 0.2, size=4, n_quantized=7)+out["_overall_eye_color"], 1) if not "eye_color" in default_params else default_params["eye_color"]
 			return out
 		parameters.add_parameters("eyes", eyes, ["head"])
 
@@ -273,7 +273,7 @@ class HierShapesBoxhead(HierShapesBase):
 		parameters.add_parameters("view", view)
 		return boxhead, parameters
 
-class HierShapesBoxheadNoHier(HierShapesBase):
+class HierShapesBoxheadSimple(HierShapesBase):
 	def get_scene_parameters(self, default_params={}, is_filter_val=True):
 		# get_intermediate_values must be false when generating factors
 		
@@ -287,7 +287,7 @@ class HierShapesBoxheadNoHier(HierShapesBase):
 			np.random.seed()
 			out = {}
 			out["color"] = hs.utils.quantized_uniform(*boxhead.parameters["color"][0],n_quantized=10) if not "color" in default_params else default_params["color"]
-			scale = hs.utils.quantized_uniform(0.75,1.25,n_quantized=15)
+			scale = hs.utils.quantized_uniform(1,1.25,n_quantized=10)
 			out["scale"] = np.asarray([scale, scale, scale]) if not "scale" in default_params else default_params["scale"]
 			return out
 		parameters.add_parameters("head", head)
@@ -296,6 +296,47 @@ class HierShapesBoxheadNoHier(HierShapesBase):
 			np.random.seed()
 			out = {}
 			out["_overall_eye_color"] = hs.utils.quantized_uniform(0,1,n_quantized=7) if not "_overall_eye_color" in default_params else default_params["_overall_eye_color"]
+			out["eye_color"] = np.mod(hs.utils.quantized_normal(0, 0.1, size=4, n_quantized=7)+out["_overall_eye_color"], 1) if not "eye_color" in default_params else default_params["eye_color"]
+			return out
+		parameters.add_parameters("eyes", eyes, ["head"])
+
+		def view():
+			np.random.seed()
+			out = {}
+			floor, wall = hs.utils.quantized_uniform(*boxhead.parameters["bg_color"][0], # [floor, wall]
+				size=boxhead.parameters["bg_color"][1], n_quantized=10)
+			out["_floor_color"] = floor if not "_floor_color" in default_params else default_params["_floor_color"]
+			out["_wall_color"] = wall if not "_wall_color" in default_params else default_params["_wall_color"]
+			out["bg_color"] = np.asarray([out["_floor_color"],out["_wall_color"]])
+			out["azimuth"] = hs.utils.quantized_uniform(*boxhead.parameters["azimuth"][0],
+				size=boxhead.parameters["azimuth"][1],n_quantized=10) if not "azimuth" in default_params else default_params["azimuth"]
+			return out
+		parameters.add_parameters("view", view)
+		return boxhead, parameters
+
+class HierShapesBoxhead(HierShapesBase):
+	def get_scene_parameters(self, default_params={}, is_filter_val=True):
+		# get_intermediate_values must be false when generating factors
+		
+		adjustable_parameters = ["color","scale","eye_color","azimuth","_overall_eye_color","_wall_color","_floor_color"]
+		for k in default_params.keys(): assert k in adjustable_parameters, f"{k} not in adjustable_parameters: {adjustable_parameters}" 
+		#boxhead = hs.scene.BoxHead(eyes=[0])
+		boxhead = hs.scene.BoxHeadCentralEye() # this is only used for parameter bounds here.
+		# parameters #
+		parameters = hs.utils.Parameters(is_filter_val=is_filter_val)
+		def head():
+			np.random.seed()
+			out = {}
+			out["color"] = hs.utils.quantized_uniform(*boxhead.parameters["color"][0],n_quantized=10) if not "color" in default_params else default_params["color"]
+			scale = hs.utils.quantized_uniform(1,1.25,n_quantized=15)
+			out["scale"] = np.asarray([scale, scale, scale]) if not "scale" in default_params else default_params["scale"]
+			return out
+		parameters.add_parameters("head", head)
+
+		def eyes(color, **kw):
+			np.random.seed()
+			out = {}
+			out["_overall_eye_color"] = hs.utils.quantized_normal(0,0.2,n_quantized=7)+color if not "_overall_eye_color" in default_params else default_params["_overall_eye_color"]
 			out["eye_color"] = np.mod(hs.utils.quantized_uniform(-0.1, 0.1,size=4,n_quantized=7)+out["_overall_eye_color"], 1) if not "eye_color" in default_params else default_params["eye_color"]
 			return out
 		parameters.add_parameters("eyes", eyes, ["head"])

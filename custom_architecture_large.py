@@ -2,6 +2,7 @@ import hsr
 import hsr.model as md
 import tensorflow as tf
 import numpy as np
+from disentangle.loss import kl_divergence_with_normal, kl_divergence_between_gaussians
 # architectures:
 encoder_layers = [
 	[[[64,4,2],["bn"]]],
@@ -71,8 +72,9 @@ class VLAE(md.vae.VLAE):
 		self.ladder_params = ladder_params
 		self._setup()
 
+from disentangle.other_library_tools.disentanglementlib_tools import total_correlation 
 import disentangle.architectures.vae as vae
-class BetaVAE(vae.BetaVAE):
+class BetaVAE(md.vae.VLAE):
 	def create_default_vae(self, **kwargs):
 		#self.create_large_ladder64(**kwargs)
 		self.create_custom_vae(**kwargs)
@@ -87,13 +89,15 @@ class BetaVAE(vae.BetaVAE):
 			activation = decoder_activations,
 			layer_param = decoder_layers, 
 			**kwargs)
+		self.latent_connections = []
+		self.ladder_params = []
 		self._setup()
 
-class BetaTCVAE(vae.BetaTCVAE):
+class BetaTCVAE(md.vae.VLAE):
 	def create_default_vae(self, **kwargs):
 		#self.create_large_ladder64(**kwargs)
-		self.create_custom_vae(**kwargs) 
-		
+		self.create_custom_vae(**kwargs)
+
 	def create_custom_vae(self, **kwargs):
 		# default encoder decoder pair:
 		self._encoder = md.encoders_and_decoders.LadderGaussianEncoder64(
@@ -104,7 +108,29 @@ class BetaTCVAE(vae.BetaTCVAE):
 			activation = decoder_activations,
 			layer_param = decoder_layers, 
 			**kwargs)
+		self.latent_connections = []
+		self.ladder_params = []
 		self._setup()
+
+	def layer_regularizer(self, sample, mean, logvar, cond_mean=None, cond_logvar=None, beta=None, *,return_kld=False,**kw):
+		# base regularization method
+		assert not (cond_mean is None != cond_logvar is None), "mean and logvar must both be sepecified if one is specified"
+		if cond_mean is None:
+			cond_mean = tf.zeros_like(mean)
+			cond_logvar = tf.zeros_like(logvar)
+		if beta is None:
+			beta = self.beta
+		kld = kl_divergence_between_gaussians(mean, logvar, cond_mean, cond_logvar)
+		
+		# tc loss
+		kl_loss = tf.reduce_sum(kld,1)
+		tc = (beta - 1) * total_correlation(sample, mean, logvar)
+		kl_loss += tc
+
+		if not return_kld:
+			return kl_loss
+		return kl_loss, kld
+
 
 def main():
 	dataset = hsr.dataset.Shapes3D()
