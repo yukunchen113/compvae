@@ -15,14 +15,70 @@ import hsr.utils.hparams as hp
 import custom_architecture
 import custom_architecture_large
 import metrics as mt
+import time
+import sys
+# shared parameters
+experimental_path = "experiments/"
+random_seeds = [
+	dict(
+		path=lambda x: os.path.join(x,"random_seed_1"),
+		random_seed=lambda x:1
+		),
+	dict(
+		path=lambda x: os.path.join(x,"random_seed_10"),
+		random_seed=lambda x:10
+		), 
+	dict(
+		path=lambda x: os.path.join(x,"random_seed_30"),
+		random_seed=lambda x:30
+		), 
+	dict(
+		path=lambda x: os.path.join(x,"random_seed_100"),
+		random_seed=lambda x:100
+		),
+	dict(
+		path=lambda x: os.path.join(x,"random_seed_300"),
+		random_seed=lambda x:300
+		),
+	]
+def get_dataset_config():
+	datasets = [
+		ds.HierShapesBoxhead(port=65333),
+		ds.HierShapesBoxheadSimple(port=65334),
+		ds.HierShapesBoxheadSimple2(port=65337)]
+	dataset_config = [
+		dict( # test hiershapes
+			path = lambda x: os.path.join(x, "hiershapes/boxhead_07"),
+			dataset = lambda x: datasets[0],
+			),
+		dict( # test hiershapes
+			path = lambda x: os.path.join(x, "hiershapes/boxheadsimple"), 
+			dataset = lambda x: datasets[1],
+			),
+		dict( # test hiershapes
+			path = lambda x: os.path.join(x, "hiershapes/boxheadsimple2"), 
+			dataset = lambda x: datasets[2])]
+	return datasets, dataset_config
+
+def mix_params(base, additionals):
+	out = []
+	for i in additionals:
+		for b in base:
+			b=copy.deepcopy(b)
+			for k,v in i.items():
+				b[k] = v(b[k])
+			out.append(b)
+	return out
+
+
 #############
 # Execution #
 #############
-def train_parallel_ladder(job_num=None):
+def get_ladder_jobs():
 	#######################
 	# Base Parallel Setup #
 	#######################
-	path = "experiments/"
+	path = copy.deepcopy(experimental_path)
 	jobs_path = os.path.join(path, "jobs")
 	base_kw = dict(
 		path = path,
@@ -47,34 +103,19 @@ def train_parallel_ladder(job_num=None):
 	###################
 	# Create the Jobs #
 	###################
-	def mix_params(base, additionals):
-		out = []
-		for i in additionals:
-			for b in base:
-				b=copy.deepcopy(b)
-				for k,v in i.items():
-					b[k] = v(b[k])
-				out.append(b)
-		return out
-
 	# base jobs
 	jobs = [base_kw]
 	#for j in jobs: print("base",j["path"])
 
 	# base model
 	base_models = [
-		# dict( # test hiershapes
-		# 	path = lambda x: os.path.join(x, "vlae_custom_test/"),
-		# 	Model = lambda x: custom_architecture.VLAE,
-		# 	traversal = lambda x: vlae_traversal,
-		# 	),
-		# dict( # test hiershapes
-		# 	path = lambda x: os.path.join(x, "lvae_custom_5000_step_test/"),
-		# 	Model = lambda x: custom_architecture.LVAE,
-		# 	traversal = lambda x: lvae_traversal,
-		# 	),
 		dict( # test hiershapes
-			path = lambda x: os.path.join(x, "lvae_custom_large_5000_step_annealed_top_gamma_1/"),
+			path = lambda x: os.path.join(x, "vlae/"),
+			Model = lambda x: custom_architecture_large.VLAE,
+			traversal = lambda x: vlae_traversal,
+			),
+		dict( # test hiershapes
+			path = lambda x: os.path.join(x, "lvae/"),
 			Model = lambda x: custom_architecture_large.LVAE,
 			traversal = lambda x: lvae_traversal,
 			),
@@ -82,29 +123,8 @@ def train_parallel_ladder(job_num=None):
 	jobs = mix_params(jobs, base_models)	
 
 	# dataset
-	dataset = [
-		#dict( # test celeba dataset
-		#	path = lambda x: os.path.join(x, "celeba"),
-		#	dataset = lambda x: ds.CelebA(),
-		#	),
-		# dict( # test shapes3d dataset
-		# 	path = lambda x: os.path.join(x, "shapes3d"),
-		# 	dataset = lambda x: ds.Shapes3D(),
-		# 	),
-		# dict( # test hiershapes
-		# 	path = lambda x: os.path.join(x, "hiershapes/boxhead_07"),
-		# 	dataset = lambda x: ds.HierShapesBoxhead(port=65333),
-		# 	),
-		dict( # test hiershapes
-			path = lambda x: os.path.join(x, "hiershapes/boxheadsimple"), 
-			dataset = lambda x: ds.HierShapesBoxheadSimple(port=65334),
-			),
-		# dict( # test hiershapes
-		# 	path = lambda x: os.path.join(x, "hiershapes/boxhead_no_hierarchy_color"),
-		# 	dataset = lambda x: ds.HierShapesBoxheadNoHier(port=65335), # this port should be different from other dataset ports
-		# 	),
-		]
-	jobs = mix_params(jobs, dataset)
+	datasets, dataset_config = get_dataset_config()
+	jobs = mix_params(jobs, dataset_config)
 	#for j in jobs: print("dataset",j["path"])
 
 	# add models
@@ -119,64 +139,24 @@ def train_parallel_ladder(job_num=None):
 
 	# add hparams
 	hparams = [
-		dict(path=lambda x: os.path.join(x,"beta_15/alpha_scheduled"),
+		dict(path=lambda x: os.path.join(x,f"beta_{beta}_annealed/alpha_scheduled"),
 			hparam_scheduler= lambda x: hp.network.StepTrigger(
-					num_layers=3,
-					alpha_kw={"duration":5000, "start_val":0, "final_val":1, "start_step":5000},
-					layerhps = [
-						hp.layers.NoOp(beta=15),
-						hp.layers.NoOp(beta=15),
-						hp.layers.LinearBeta(duration=5000, start_val=75, final_val=15, start_step=0),
-					]
-				),
-			),
-		# dict(path=lambda x: os.path.join(x,"beta_20/alpha_scheduled"),
-		# 	hparam_scheduler= lambda x: hp.network.StepTrigger(
-		# 			num_layers=3,
-		# 			alpha_kw={"duration":5000, "start_val":0, "final_val":1, "start_step":5000},
-		# 			layerhps = [
-		# 				hp.layers.NoOp(beta=20),
-		# 				hp.layers.NoOp(beta=20),
-		# 				hp.layers.LinearBeta(duration=5000, start_val=75, final_val=20, start_step=0),
-		# 			]
-		# 		),
-		# 	),
-		]
+					num_layers=3, alpha_kw={"duration":5000, "start_val":0, "final_val":1, "start_step":5000},
+					layerhps = [hp.layers.NoOp(beta=beta), hp.layers.NoOp(beta=beta),
+						hp.layers.LinearBeta(duration=5000, start_val=75, final_val=beta, start_step=0)]),
+			) for beta in [5,10,15,20,30]]
 	jobs = mix_params(jobs, hparams)
-	#for j in jobs: print("hparams",j["path"])
 
 	# add random seeds
-	random_seeds = [
-		dict(
-			path=lambda x: os.path.join(x,"random_seed_1"),
-			random_seed=lambda x:1
-			), 
-		dict(
-			path=lambda x: os.path.join(x,"random_seed_10"),
-			random_seed=lambda x:10
-			), 
-		dict(
-			path=lambda x: os.path.join(x,"random_seed_100"),
-			random_seed=lambda x:100
-			),
-		]
 	jobs = mix_params(jobs, random_seeds)
-	#for j in jobs: print("random seeds",j["path"])
 
-	#######################
-	# Submit and Run Jobs #
-	#######################
-	if job_num is None: 
-		parallel = ParallelRun(exec_file=os.path.abspath(__file__), job_path=jobs_path, num_gpu=2, max_concurrent_procs_per_gpu=1)
-		parallel(*[str(i) for i in range(len(jobs))])
-	else:
-		run_training(**jobs[job_num])
+	return datasets, jobs
 
-def train_parallel_single(job_num=None):
+def get_single_jobs():
 	#######################
 	# Base Parallel Setup #
 	#######################
-	path = "experiments/"
+	path = copy.deepcopy(experimental_path)
 	jobs_path = os.path.join(path, "jobs")
 	base_kw = dict(
 		path = path,
@@ -201,29 +181,18 @@ def train_parallel_single(job_num=None):
 	###################
 	# Create the Jobs #
 	###################
-	def mix_params(base, additionals):
-		out = []
-		for i in additionals:
-			for b in base:
-				b=copy.deepcopy(b)
-				for k,v in i.items():
-					b[k] = v(b[k])
-				out.append(b)
-		return out
-
 	# base jobs
 	jobs = [base_kw]
-	#for j in jobs: print("base",j["path"])
 
 	# base model
 	base_models = [
 		dict( # test hiershapes
-			path = lambda x: os.path.join(x, "betavae_custom_large/"),
+			path = lambda x: os.path.join(x, "betavae/"),
 			Model = lambda x: custom_architecture_large.BetaVAE,
 			traversal = lambda x: vlae_traversal,
 			),
 		dict( # test hiershapes
-			path = lambda x: os.path.join(x, "betatcvae_custom_large/"),
+			path = lambda x: os.path.join(x, "betatcvae/"),
 			Model = lambda x: custom_architecture_large.BetaTCVAE,
 			traversal = lambda x: vlae_traversal,
 			),
@@ -231,30 +200,8 @@ def train_parallel_single(job_num=None):
 	jobs = mix_params(jobs, base_models)	
 
 	# dataset
-	dataset = [
-		#dict( # test celeba dataset
-		#	path = lambda x: os.path.join(x, "celeba"),
-		#	dataset = lambda x: ds.CelebA(),
-		#	),
-		# dict( # test shapes3d dataset
-		# 	path = lambda x: os.path.join(x, "shapes3d"),
-		# 	dataset = lambda x: ds.Shapes3D(),
-		# 	),
-		# dict( # test hiershapes
-		# 	path = lambda x: os.path.join(x, "hiershapes/boxhead_07"),
-		# 	dataset = lambda x: ds.HierShapesBoxhead(port=65333),
-		# 	),
-		dict( # test hiershapes
-			path = lambda x: os.path.join(x, "hiershapes/boxheadsimple"), 
-			dataset = lambda x: ds.HierShapesBoxheadSimple(port=65335),
-			),
-		# dict( # test hiershapes
-		# 	path = lambda x: os.path.join(x, "hiershapes/boxheadsimple2"), 
-		# 	dataset = lambda x: ds.HierShapesBoxheadSimple2(port=65337),
-		# 	),
-		]
-	jobs = mix_params(jobs, dataset)
-	#for j in jobs: print("dataset",j["path"])
+	datasets,dataset_config = get_dataset_config()
+	jobs = mix_params(jobs, dataset_config)
 
 	# add models
 	models = [
@@ -264,66 +211,27 @@ def train_parallel_single(job_num=None):
 			),
 		]
 	jobs = mix_params(jobs, models)
-	#for j in jobs: print("models",j["path"])
 
 	# add hparams
-	hparams = [
-		dict(path=lambda x: os.path.join(x,"beta_15_annealed_10000/alpha_scheduled"),
-			hparam_scheduler= lambda x: hp.network.StepTrigger(
-					num_layers=1,
-					layerhps = [
-						hp.layers.LinearBeta(duration=10000, start_val=200, final_val=15, start_step=0),
-					]
-				),
-			),
-		dict(path=lambda x: os.path.join(x,"beta_15/alpha_scheduled"),
-			hparam_scheduler= lambda x: hp.network.StepTrigger(
-					num_layers=1,
-					layerhps = [
-						hp.layers.NoOp(beta=15),
-					]
-				),
-			),
-		]
+	hparams = []
+	for beta in [5,10,15,20,30]:
+		hparams+=[
+			dict(path=lambda x: os.path.join(x,f"beta_{beta}_annealed/"),
+				hparam_scheduler= lambda x: hp.network.StepTrigger(
+						num_layers=1,
+						layerhps = [hp.layers.LinearBeta(duration=10000, start_val=200, final_val=beta, start_step=0)])),
+			dict(path=lambda x: os.path.join(x,f"beta_{beta}/"),
+				hparam_scheduler= lambda x: hp.network.StepTrigger(
+						num_layers=1, layerhps = [hp.layers.NoOp(beta=beta)]))
+			]
 	jobs = mix_params(jobs, hparams)
 	#for j in jobs: print("hparams",j["path"])
 
 	# add random seeds
-	random_seeds = [
-		dict(
-			path=lambda x: os.path.join(x,"random_seed_1"),
-			random_seed=lambda x:1
-			),
-		dict(
-			path=lambda x: os.path.join(x,"random_seed_10"),
-			random_seed=lambda x:10
-			), 
-		dict(
-			path=lambda x: os.path.join(x,"random_seed_30"),
-			random_seed=lambda x:30
-			), 
-		dict(
-			path=lambda x: os.path.join(x,"random_seed_100"),
-			random_seed=lambda x:100
-			),
-		dict(
-			path=lambda x: os.path.join(x,"random_seed_300"),
-			random_seed=lambda x:300
-			),
-		]
 	jobs = mix_params(jobs, random_seeds)
 	#for j in jobs: print("random seeds",j["path"])
 
-	#######################
-	# Submit and Run Jobs #
-	#######################
-	if job_num is None: 
-		parallel = ParallelRun(exec_file=os.path.abspath(__file__), job_path=jobs_path, 
-			num_gpu=2, max_concurrent_procs_per_gpu=3)
-		parallel(*[str(i) for i in range(len(jobs))])
-	else:
-		run_training(**jobs[job_num])
-	raise Exception("Finished models")
+	return datasets, jobs
 
 ################
 # Used Objects #
@@ -409,17 +317,3 @@ def run_training(path, dataset, train_dataset_params, random_seed, model_params,
 			#mt.save_irs(model, path=irssavepath, filename="%d.png"%step)
 	if hasattr(dataset, "close"): dataset.close()
 
-	# run metric:
-
-
-
-
-import sys
-if __name__ == '__main__':
-	args=sys.argv
-	if len(args)>1:
-		#train_parallel_ladder(int(args[1]))
-		train_parallel_single(int(args[1]))
-	else:
-		#train_parallel_ladder(None)
-		train_parallel_single(None)
