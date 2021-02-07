@@ -26,7 +26,7 @@ class Scene:
 		return parameters
 
 class Pyramid(Scene):
-	def __init__(self, num_blocks=3, shape_cache_path="dev_tmp/pyramid", image_size = [64,64]):
+	def __init__(self, num_blocks=3, shape_cache_path=os.path.join(os.path.dirname(os.path.abspath(__file__)),"premade_shapes/pyramid"), image_size = [64,64]):
 		if not os.path.exists(shape_cache_path): os.makedirs(shape_cache_path)
 		self.shape_cache_path = shape_cache_path
 		self.color = ut.HLSToRGB()
@@ -141,7 +141,7 @@ class Pyramid(Scene):
 
 class BoxHead(Scene):
 	def __init__(self, eyes=[0,1], # 0 is left eye, 1 is right eye
-		shape_cache_path="dev_tmp/box_head", image_size = [64,64]):
+		shape_cache_path=os.path.join(os.path.dirname(os.path.abspath(__file__)),"premade_shapes/box_head"), image_size = [64,64]):
 		if not os.path.exists(shape_cache_path): os.makedirs(shape_cache_path)
 		self.shape_cache_path = shape_cache_path
 		self.color = ut.HLSToRGB()
@@ -263,7 +263,7 @@ class BoxHead(Scene):
 		return image
 
 class BoxHeadCentralEye(BoxHead):
-	def __init__(self, shape_cache_path="dev_tmp/box_head", image_size = [64,64]):
+	def __init__(self, shape_cache_path=os.path.join(os.path.dirname(os.path.abspath(__file__)),"premade_shapes/box_head"), image_size = [64,64]):
 		super().__init__(eyes=[0], shape_cache_path=shape_cache_path, image_size=image_size)
 		self.length = 1	
 		self.mid_length = 3/7*self.length
