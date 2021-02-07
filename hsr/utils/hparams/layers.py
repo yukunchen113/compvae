@@ -1,6 +1,7 @@
 import numpy as np
 
 class LinearChange:
+	# note, this is not a layer!
 	def __init__(self, duration, start_val, final_val, start_step=0):
 		self.duration=duration
 		self.start_val=start_val
@@ -21,6 +22,11 @@ class NoOp:
 		self.kw = kw
 	def __call__(self,*ar,**kw):
 		return self.kw
+
+class LinearBeta(LinearChange):
+	def __call__(self, step, model=None,**kw):
+		beta = super().__call__(step=step)
+		return {"beta":beta}
 
 class BaseBetaKLDDetection:
 	def __init__(self,kld_detection_threshold=1,**kw):

@@ -1,0 +1,5 @@
+*.md
+dev*
+experiments*
+*/__pycache__*
+*/dev*

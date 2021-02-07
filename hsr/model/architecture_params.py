@@ -70,6 +70,6 @@ vlae_activations_encoder_small64 = {"default":tf.nn.leaky_relu, -1:tf.keras.acti
 vlae_activations_decoder_small64 = {"default":tf.nn.leaky_relu, -1:tf.math.sigmoid}
 vlae_latent_connections_small64 = [(0,-1),(1,-2)]# (encoder output, decoder input)
 
-############################
-# LVAE+ Network Parameters #
-############################
+#################################
+# Additional Network Parameters #
+#################################

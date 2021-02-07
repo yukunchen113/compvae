@@ -45,8 +45,8 @@ class LVAETraversal(dt.visualize.Traversal): #create wrapper for model encoder a
 		"""samples a latent layer.
 		
 		Args:
-		    layernum (int): Latent layer to sample
-		    latent_of_focus (int,None, optional): latent number, this will be used to find layernum if that is not specified
+			layernum (int): Latent layer to sample
+			latent_of_focus (int,None, optional): latent number, this will be used to find layernum if that is not specified
 		
 		"""
 		assert (layernum is None) != (latent_of_focus is None)
@@ -80,10 +80,10 @@ class LVAETraversal(dt.visualize.Traversal): #create wrapper for model encoder a
 		"""traverses the latent space, focuses on one latent for each given image.
 		
 		Args:
-		    latent_of_focus (int): Latent element to traverse, arbitraly set to 0 as default
-		    min_value (int): min value for traversal
-		    max_value (int): max value for traversal
-		    num_steps (int): The number of steps between min and max value
+			latent_of_focus (int): Latent element to traverse, arbitraly set to 0 as default
+			min_value (int): min value for traversal
+			max_value (int): max value for traversal
+			num_steps (int): The number of steps between min and max value
 		
 		"""
 		# initialize latent representation of images
@@ -195,7 +195,7 @@ class LVAETraversal(dt.visualize.Traversal): #create wrapper for model encoder a
 		return samples
 
 def lvae_traversal(model, inputs, min_value=-3, max_value=3, num_steps=30, is_visualizable=True, latent_of_focus=None, Traversal=LVAETraversal, return_traversal_object=False, hparam_obj=None, is_sample=False):
-	"""Standard raversal of the latent space
+	"""Standard traversal of the latent space
 	
 	Args:
 		model (Tensorflow Keras Model): Tensorflow VAE from utils.tf_custom
@@ -292,11 +292,11 @@ class VLAETraversal(dt.visualize.Traversal): #create wrapper for model encoder a
 		samples = [self.inputs]+samples
 		return samples
 
-def vlae_traversal(model, inputs, min_value=-3, max_value=3, num_steps=30, is_visualizable=True, latent_of_focus=None, Traversal=VLAETraversal, return_traversal_object=False, hparam_obj=None):
-	"""Standard raversal of the latent space
+def vlae_traversal(model, inputs, min_value=-3, max_value=3, num_steps=30, is_visualizable=True, latent_of_focus=None, Traversal=VLAETraversal, return_traversal_object=False, hparam_obj=None, **kw):
+	"""Standard traversal of the latent space
 	
 	Args:
-		model (Tensorflow Keras Model): Tensorflow VAE from utils.tf_custom
+		model (Tensorflow Keras Model): VLAE from hsr 
 		inputs (numpy arr): Input images in NHWC
 		min_value (int): min value for traversal
 		max_value (int): max value for traversal
@@ -310,6 +310,47 @@ def vlae_traversal(model, inputs, min_value=-3, max_value=3, num_steps=30, is_vi
 	"""
 	t = dt.general.tools.Timer()
 	traverse = Traversal(model=model, inputs=inputs, hparam_obj=hparam_obj)
+	#t("Timer Creation")
+	if latent_of_focus is None:
+		traverse.traverse_complete_latent_space(min_value=min_value, max_value=max_value, num_steps=num_steps)
+	else:
+		traverse.traverse_latent_space(latent_of_focus=latent_of_focus, min_value=min_value, max_value=max_value, num_steps=num_steps)
+
+	#t("Timer Traversed")
+	traverse.create_samples()
+	#t("Timer Create Samples")
+	if return_traversal_object:
+		return traverse
+	if not is_visualizable:
+		return traverse.samples
+	image = traverse.construct_single_image()
+	return image 
+
+class VAETraversal(dt.visualize.Traversal):
+	@property
+	def samples_list(self):
+		inputs = np.broadcast_to(self.inputs, self.samples[0].shape)
+		print(inputs, self.samples.shape)
+		return [inputs, self.samples]
+
+def vae_traversal(model, inputs, min_value=-3, max_value=3, num_steps=30, is_visualizable=True, latent_of_focus=None, Traversal=VAETraversal, return_traversal_object=False, **kw):
+	"""Standard raversal of the latent space
+	
+	Args:
+		model (Tensorflow Keras Model): VAE 
+		inputs (numpy arr): Input images in NHWC
+		min_value (int): min value for traversal
+		max_value (int): max value for traversal
+		num_steps (int): The number of steps between min and max value
+		is_visualizable (bool, optional): If false, will return a traversal tensor of shape [traversal_steps, num_images, W, H, C]
+		Traversal (Traversal object, optional): This is the traversal object to use
+		return_traversal_object (bool, optional): Whether to return the traversal or not
+	
+	Returns:
+		Numpy arr: image
+	"""
+	t = dt.general.tools.Timer()
+	traverse = Traversal(model=model, inputs=inputs)
 	#t("Timer Creation")
 	if latent_of_focus is None:
 		traverse.traverse_complete_latent_space(min_value=min_value, max_value=max_value, num_steps=num_steps)

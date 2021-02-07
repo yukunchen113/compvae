@@ -97,7 +97,10 @@ class LadderDecoder64(LadderDecoder):
 			activation=activation, 
 			is_create_sequential=False, # don't create sequential as we shouldn't build just yet - we need to redefine the layers.
 			**kwargs)	
-	
+
+##################################
+# Prebuilt Encoders and Decoders #
+##################################
 class LadderGaussianEncoderLarge64(LadderGaussianEncoder64):
 	def __init__(self, num_latents=7, activation=None, **kwargs):
 		"""This is a gaussian encoder that takes in 64x64x3 images
