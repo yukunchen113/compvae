@@ -43,7 +43,8 @@ class Batch():
 			plotter = self.plotter
 		images = []
 		for i in parameters:
-			plotter.clear()
+			plotter.clear() # it seems that clearing causes shadows to disappear when using xvfb
+			if hasattr(plotter, "enable_lightkit"): plotter.enable_lightkit() # this is here to handle docker (which uses xvfb) which removes lightkit for some reason
 			images.append(self.scene(plotter=plotter,**i))
 		if return_labels:
 			return np.asarray(images), parameters
@@ -323,6 +324,7 @@ class ServerClient:
 		except OSError:
 			print("No Server...", end="")
 			self.server = None
+		time.sleep(3)
 		self.client = Client(prefetch=prefetch,port=port,verbose=verbose,pool_size=pool_size,is_fill_pool=is_fill_pool)
 		self.server_proc = None
 

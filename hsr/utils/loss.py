@@ -1,5 +1,5 @@
 import tensorflow as tf 
-
+import numpy as np
 #######################
 # Training/Loss Utils #
 #######################
@@ -47,8 +47,32 @@ class ImageBCE(): # binary cross entropy
 		loss = tf.math.reduce_mean(loss)
 		return loss
 
+	def numpy(self, actu, pred, label_smooting_pad=1e-5):
+		reduction_axis = list(range(1,len(actu.shape)))
+
+		# apply label smooting
+		actu = actu*(1-2*label_smooting_pad)+label_smooting_pad
+		pred = pred*(1-2*label_smooting_pad)+label_smooting_pad
+
+		# per point
+		loss = actu*(-np.log(pred))+(1-actu)*(-np.log(1-pred))
+
+		# apply processing to first 3 channels
+		loss = self.loss_process(loss)
+
+		# per sample
+		loss = np.sum(loss, axis=tuple(reduction_axis))
+		# per batch
+		loss = np.mean(loss)
+		return loss
+		
 # regularization loss
 def kld_loss_reduction(kld_loss):
 	# per batch
 	kld_loss = tf.math.reduce_mean(kld_loss)
+	return kld_loss
+
+def kld_loss_reduction_numpy(kld_loss):
+	# per batch
+	kld_loss = np.mean(kld_loss)
 	return kld_loss
