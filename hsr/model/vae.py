@@ -303,9 +303,9 @@ class VLAE(LadderBase):
 	def _setup_decoder_call(self):
 		layers = self.decoder.layers
 		latent_connections = {lc[1]:i for i,lc in enumerate(self.latent_connections)}
-		def call(latent_space_samples=None, latent_space=None,**kw):
+		def call(latent_space_samples=None, latent_space=None, use_mean=False, **kw):
 			if latent_space_samples is None: 
-				latent_space_samples = [i[0] for i in latent_space]
+				latent_space_samples = [i[0+int(use_mean)] for i in latent_space]
 			pred = latent_space_samples[-1] # get samples from last layer
 			for i,layer in enumerate(layers):
 				# concatenate latent space
@@ -328,7 +328,7 @@ class VLAE(LadderBase):
 		return config_param
 
 	# run model
-	def call(self, inputs, alpha=None, beta=None, **kw):
+	def call(self, inputs, alpha=None, beta=None, use_mean=False, **kw):
 		# alpha is list of size num latent_space
 		#called during each training step and inference
 		#TBD: run latent space and next layer in parallel
@@ -342,7 +342,7 @@ class VLAE(LadderBase):
 		for loss in losses:
 			self.add_loss(loss)
 		
-		reconstruction = self.decoder(None, latent_space=self.latent_space,**kw)
+		reconstruction = self.decoder(None, latent_space=self.latent_space, use_mean=use_mean, **kw)
 		return reconstruction
 	def regularizer(self, latent_space, alpha, beta, **kw):
 		"""Regularizer for latent space
@@ -530,19 +530,19 @@ class LVAE(VLAE):
 		samples = np.exp(0.5*logvar)*np.random.normal(size=logvar.shape)+mean
 		return samples, mean, logvar
 	
-	def call(self, inputs, **kw):
+	def call(self, inputs, use_mean=False,**kw):
 		"""runs inference
 		"""
 		# run encoder
-		self.latent_space = self.encoder(inputs,**kw)
+		self.latent_space = self.encoder(inputs,use_mean=use_mean,**kw)
 		# run decoder (TD with encoder)
-		reconstruction = self.decoder(None, latent_space=self.latent_space,**kw)
+		reconstruction = self.decoder(None, latent_space=self.latent_space, use_mean=use_mean, **kw)
 
 		prior_space=[None for _ in self.latent_space]
 		prior_space[-1] = list(self.top_layer_latent_space(self.latent_space[-1][0].shape))
 		
 		# run decoder prior (just make all except last latents space samples None)
-		prior_space[:-1] = self.decoder(None, latent_space=prior_space, return_ls=True,**kw)[1][:-1]
+		prior_space[:-1] = self.decoder(None, latent_space=prior_space, return_ls=True, use_mean=use_mean,**kw)[1][:-1]
 		assert len(prior_space)== len(self.latent_space)
 		# run regularization
 		losses = self.regularizer(self.latent_space, prior_space, **kw)
@@ -559,7 +559,7 @@ class LVAE(VLAE):
 		self._past_kld = []
 		for i,ls,ps in zip(range(len(latent_space)), latent_space, prior_space):
 			# select the prior to be a specific distribution
-			if not self.gamma is None and hparams["alpha"][i]<1e-7:
+			if not self.gamma is None and "alpha" in hparams and hparams["alpha"][i]<1e-7:
 				hparams["beta"][i] = self.gamma
 			reg_loss,kld=self.layer_regularizer(*ls,*ps[1:], cond_sample=ps[0], return_kld=True, layer_num=i, 
 				**{k:v[i] for k,v in hparams.items()})

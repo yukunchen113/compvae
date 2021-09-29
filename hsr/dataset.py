@@ -6,12 +6,16 @@ import disentangle as dt
 import numpy as np
 import tensorflow_datasets as tfds
 import hiershapes as hs
+import os
+import time
+import h5py
+import pickle
+import random
 
 #limit GPU usage (from tensiorflow code)
 gpus = tf.config.experimental.list_physical_devices('GPU')
 for i in gpus:
 	tf.config.experimental.set_memory_growth(i, True)
-
 def _get_test_handles(group_size, dataset_manager):
 	gl = dataset_manager.groups_list
 	dataset_manager.groups_list = gl[group_size:]
@@ -180,7 +184,7 @@ class Shapes3D(_TFDSBase):
 # Generative Datasets #
 #######################
 class HierShapesBase(_Base):
-	def __init__(self, use_server=True, use_pool=True, run_once=False, num_proc=20, prefetch=20, pool_size=10, port=None):
+	def __init__(self, use_server=True, use_pool=True, run_once=False, use_preloaded=False, num_proc=20, prefetch=20, pool_size=10, port=None):
 		self.use_server = use_server
 		self.port = port
 		if use_server: assert use_pool, "if using server, must be with pool"
@@ -193,14 +197,21 @@ class HierShapesBase(_Base):
 		self.test_labels = None
 		self.test_images = None
 		self.server = None
+		self.use_preloaded=use_preloaded
 		self.dataset_manager = self.start_server()
 
 	def test(self, batch_size=None, return_labels=False):
 		if self.test_labels is None or not batch_size is None:
 			if batch_size is None: batch_size = 64
-			self.test_images,self.test_labels = self.dataset_manager.get_batch(batch_size)
+			if not self.use_preloaded:
+				self.test_images,self.test_labels = self.dataset_manager.get_batch(batch_size)
+			else:
+				self.test_images,self.test_labels = self.dataset_manager.load([0,0])
 		else:
-			self.test_images = self.dataset_manager.get_images(self.test_labels)
+			if self.use_preloaded:
+				self.test_images,_ = self.dataset_manager.load([0,0])
+			else:
+				self.test_images = self.dataset_manager.get_images(self.test_labels)
 		if return_labels: return self.test_images, self.test_labels
 		return self.test_images
 	
@@ -208,6 +219,7 @@ class HierShapesBase(_Base):
 		return tf.image.convert_image_dtype(inputs, tf.float32)
 	
 	def start_server(self):
+		if self.use_preloaded: return HDF5Dataset(self.folder)
 		# Server #
 		scene, parameters = self.get_scene_parameters()
 		if self.use_server:
@@ -223,6 +235,7 @@ class HierShapesBase(_Base):
 		return client
 
 	def close(self, is_terminate_server=False):
+		if self.use_preloaded: return
 		self.dataset_manager.close()
 		if is_terminate_server and not self.server is None: self.server.close() 
 
@@ -233,6 +246,7 @@ class HierShapesBase(_Base):
 		return d
 
 class HierShapesBoxheadSimple2(HierShapesBase):
+	folder = "dataset/boxheadsimple2"
 	def get_scene_parameters(self, default_params={}, is_filter_val=True):
 		# get_intermediate_values must be false when generating factors
 		
@@ -274,6 +288,7 @@ class HierShapesBoxheadSimple2(HierShapesBase):
 		return boxhead, parameters
 
 class HierShapesBoxheadSimple(HierShapesBase):
+	folder = "dataset/boxheadsimple"
 	def get_scene_parameters(self, default_params={}, is_filter_val=True):
 		# get_intermediate_values must be false when generating factors
 		
@@ -315,6 +330,7 @@ class HierShapesBoxheadSimple(HierShapesBase):
 		return boxhead, parameters
 
 class HierShapesBoxhead(HierShapesBase):
+	folder = "dataset/boxhead_07"
 	def get_scene_parameters(self, default_params={}, is_filter_val=True):
 		# get_intermediate_values must be false when generating factors
 		
@@ -354,3 +370,141 @@ class HierShapesBoxhead(HierShapesBase):
 			return out
 		parameters.add_parameters("view", view)
 		return boxhead, parameters
+
+class HDF5Dataset:
+	def __init__(self, folder, capacity=5000, is_cycle=True, get_random=True):
+		"""
+		Writing: To indicate you are finished writing data, you must call close().   
+
+		This dataset object will pick off where was left off from before, accounting for sudden stops.
+		If there is any datasets that were not finished, there might be corruptions. 
+		To avoid this, this dataset sets up a system to delete any unfinished datasets and start from there.
+
+		dset: hdf5 files
+	
+		"""
+		if not os.path.exists(folder): os.makedirs(folder)
+		self.folder = folder
+		self.capacity = capacity
+		self.load_index = [0,0]
+		self.current_file = None
+		self.current_dataset = None
+		self.get_random = get_random
+		self.is_cycle = is_cycle
+		self.batch_size = None
+
+	def clean(self):
+		"""
+		This method checks for and cleans previous unfinished dataset if unfinished dataset exists.
+		"""
+		for filename in os.listdir(self.folder): 
+			if filename.startswith("dataset") and filename.endswith(".hdf5") and "tmp" in filename: 
+				os.remove(os.path.join(self.folder,filename))
+
+	def get_latest_dset(self):
+		"""
+		This method gets the latest hdf5 file
+
+		if the latest file is at capacity and has tmp, remove tmp from prev filename
+
+		will get new tmp name
+		"""
+		# find latest file,
+		if self.current_file is None:
+			self.clean()
+			files = [(int(i.split("_")[1]), os.path.join(self.folder, i)) for i in os.listdir(self.folder) if i.startswith("dataset")]
+			if not files: 
+				self.current_file = os.path.join(self.folder, f"dataset_0_tmp.hdf5")
+			else:
+				self.current_file = sorted(files)[-1][1]
+
+		# get the capacity (return if not at capacity)
+		if not os.path.exists(self.current_file): return self.current_file, 0
+		with h5py.File(self.current_file, "r") as storage:
+			curcap = len(storage.keys())
+			is_past_capacity = curcap>=self.capacity
+		if not is_past_capacity: return self.current_file, curcap
+		
+		# remove tmp with self.close() if at capacity and has tmp
+		self.close()
+		filenum = int(os.path.basename(self.current_file).split("_")[1])+1
+		self.current_file = os.path.join(self.folder, f"dataset_{filenum}_tmp.hdf5")
+		return self.current_file, 0
+
+	def save(self, data, labels):
+		"""saves the data as latest group in hdf5 dataset. 
+		"""
+		dsetfile, dsetnum = self.get_latest_dset()
+		with h5py.File(dsetfile, "a") as storage:
+			grp = storage.create_group(str(dsetnum))
+			grp.create_dataset("labels", data=np.asarray(pickle.dumps(labels)))
+			grp.create_dataset("data", data=data, compression="gzip")
+		dsetfile, dsetnum = self.get_latest_dset()
+
+	def load(self, load_index, get_random=False):
+		"""
+		loads data from file and group using load_index 
+
+		return data if found, None if data doesn't exist at load index  
+		"""
+		filenum, dsetnum = load_index
+		
+		if get_random:
+			np.random.seed()
+			filenum = np.random.choice([int(i.split("_")[1]) for i in os.listdir(self.folder) if i.startswith("dataset") and not "tmp" in i])
+		filepath = os.path.join(self.folder, f"dataset_{filenum}_.hdf5")
+		if not os.path.exists(filepath): return None
+
+		# return None if no data is found
+		with h5py.File(filepath, "r") as storage:
+			if get_random: dsetnum = np.random.choice(list(storage.keys()))
+			if not str(dsetnum) in storage: return None
+			group = storage[str(dsetnum)]
+			data, labels = group["data"][()], pickle.loads(group["labels"][()].item())
+		return data, labels
+
+	def increment_load(self):
+		"""
+		loads data from file and group using load_index 
+
+		if load_index is specified, the use that, otherwise, use load_index state
+
+		if dataset is finished - no files/groups left, returns None
+		"""
+		data = self.load(self.load_index, self.get_random)
+		if data is None:
+			self.load_index[0]+=1
+			self.load_index[1]=0
+			data = self.load(self.load_index)
+		if self.is_cycle and data is None: 
+			self.set_load_index()
+			data = self.load(self.load_index)
+		self.load_index[1]+=1
+		return data
+
+	def __iter__(self):
+		return self
+
+	def __next__(self):
+		data = list(self.increment_load())
+		assert self.batch_size is None or self.batch_size<=len(data[0]), f"batch_size is too big, max batch size is {len(data)}"
+		if not self.batch_size is None: 
+			data[0] = data[0][:self.batch_size]
+			data[1] = data[1][:self.batch_size]
+		return data
+
+	def batch(self, batch_size):
+		self.batch_size = batch_size
+		return self
+
+	def set_load_index(self, load_index=None):
+		"""sets load index, resets if nothing is specified
+		"""
+		if load_index is None: load_index = [0,0]
+		self.load_index = load_index
+
+	def close(self):
+		"""
+		if there is a tmp on current dataset, will remove the tmp
+		"""
+		if not self.current_file is None and self.current_file.endswith("_tmp.hdf5"): os.rename(self.current_file, self.current_file.replace("_tmp.hdf5", "_.hdf5"))

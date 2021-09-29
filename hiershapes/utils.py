@@ -66,7 +66,6 @@ class Server(BaseSocket):
 				data[conn] = self.recv(conn)
 			except ConnectionResetError:
 				pass
-		time.sleep(0.5)
 		#if len(connections): print(f"Received {len(connections)} clients")
 		return data
 
